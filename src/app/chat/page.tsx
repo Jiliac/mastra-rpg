@@ -19,7 +19,7 @@ export default function ChatPage() {
       .catch(() => {});
   }, [setMessages]);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || status === 'streaming') return;
     sendMessage({ text: input });
