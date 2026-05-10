@@ -8,7 +8,7 @@ const forecastSchema = z.object({
   precipitationChance: z.number(),
   condition: z.string(),
   location: z.string(),
-})
+});
 
 function getWeatherCondition(code: number): string {
   const conditions: Record<number, string> = {
@@ -28,8 +28,8 @@ function getWeatherCondition(code: number): string {
     73: 'Moderate snow fall',
     75: 'Heavy snow fall',
     95: 'Thunderstorm',
-  }
-  return conditions[code] || 'Unknown'
+  };
+  return conditions[code] || 'Unknown';
 }
 
 const fetchWeather = createStep({
@@ -60,15 +60,15 @@ const fetchWeather = createStep({
     const response = await fetch(weatherUrl);
     const data = (await response.json()) as {
       current: {
-        time: string
-        precipitation: number
-        weathercode: number
-      }
+        time: string;
+        precipitation: number;
+        weathercode: number;
+      };
       hourly: {
-        precipitation_probability: number[]
-        temperature_2m: number[]
-      }
-    }
+        precipitation_probability: number[];
+        temperature_2m: number[];
+      };
+    };
 
     const forecast = {
       date: new Date().toISOString(),
@@ -77,15 +77,14 @@ const fetchWeather = createStep({
       condition: getWeatherCondition(data.current.weathercode),
       precipitationChance: data.hourly.precipitation_probability.reduce(
         (acc, curr) => Math.max(acc, curr),
-        0
+        0,
       ),
-      location: name
-    }
+      location: name,
+    };
 
     return forecast;
   },
 });
-
 
 const planActivities = createStep({
   id: 'plan-activities',
@@ -95,10 +94,10 @@ const planActivities = createStep({
     activities: z.string(),
   }),
   execute: async ({ inputData, mastra }) => {
-    const forecast = inputData
+    const forecast = inputData;
 
     if (!forecast) {
-      throw new Error('Forecast data not found')
+      throw new Error('Forecast data not found');
     }
 
     const agent = mastra?.getAgent('weatherAgent');
@@ -175,7 +174,7 @@ const weatherWorkflow = createWorkflow({
   }),
   outputSchema: z.object({
     activities: z.string(),
-  })
+  }),
 })
   .then(fetchWeather)
   .then(planActivities);

@@ -2,7 +2,6 @@
 
 You are a TypeScript developer experienced with the Mastra framework. You build AI agents, tools, workflows, and scorers. You follow strict TypeScript practices and always consult up-to-date Mastra documentation before making changes.
 
-
 ## CRITICAL: Load `mastra` skill
 
 **BEFORE doing ANYTHING with Mastra, load the `mastra` skill FIRST.** Never rely on cached knowledge as Mastra's APIs change frequently between versions. Use the skill to read up-to-date documentation from `node_modules`.
@@ -14,9 +13,19 @@ This is a **Mastra** project written in TypeScript. Mastra is a framework for bu
 ## Commands
 
 ```bash
-npm run dev # Start Mastra Studio at localhost:4111 (long-running, use a separate terminal)
-npm run build # Build a production-ready server
+pnpm dev          # Start Mastra Studio at localhost:4111 (long-running, use a separate terminal)
+pnpm build        # Build a production-ready server
+pnpm lint         # Run ESLint
+pnpm format       # Format all files with Prettier
+pnpm format:check # Verify formatting without writing
 ```
+
+## Formatting & Linting
+
+- **Prettier** formats all code (`.ts`, `.tsx`, `.md`, `.json`, `.css`, etc.). Config in `.prettierrc`.
+- **ESLint** lints `.ts`/`.tsx` (Next.js + TypeScript rules). `eslint-config-prettier` disables stylistic rules that conflict with Prettier.
+- A Claude Code `PostToolUse` hook in `.claude/settings.json` auto-runs Prettier on every file you Write/Edit — no manual formatting needed.
+- A `pre-commit` hook (husky + lint-staged) runs Prettier and `eslint --fix` on staged files before each commit.
 
 ## Project Structure
 
@@ -55,6 +64,7 @@ Top-level files define how your Mastra project is configured, built, and connect
 - Never commit `.env` files or secrets
 - Never modify `node_modules` or Mastra's database files directly
 - Never hardcode API keys (always use environment variables)
+
 ## Resources
 
 - [Mastra Documentation](https://mastra.ai/llms.txt)
