@@ -70,14 +70,6 @@ reviews:
             mode that benefits — flag YAGNI on speculative hardening. If the
             affected code has no callers, suggest deletion before suggesting
             elaboration.
-          - Speculative security findings (path traversal, SSRF, CSRF,
-            injection, XSS, ReDoS) are YAGNI when the affected code has no
-            untrusted-input boundary today. v0 reads config from env vars and
-            runs on localhost; there are no HTTP request bodies feeding into
-            the relevant code paths yet. If the threat would only materialize
-            once a future wave wires up the HTTP/route surface, the fix
-            belongs in THAT wave, not in this PR. State the boundary you
-            checked. Do not flag.
           - Verify before asserting. If a claim depends on runtime path
             resolution, CI runner state, framework idioms, or whether a test
             is enforced elsewhere in the suite, say what you checked and what
@@ -94,8 +86,6 @@ reviews:
           - Don't flag "magic numbers" or "consider a constant" unless the value
             recurs or is non-obvious. One-shot literals in tests, fixtures, and
             seed data are fine.
-          - Don't speculate about "potential race conditions" or "potential
-            null" without identifying a concrete code path that triggers it.
           - For test files: don't suggest renaming tests, adding docstrings,
             splitting cases, or grouping by describe blocks unless the change
             fixes a real readability or correctness issue. Defensive guards
