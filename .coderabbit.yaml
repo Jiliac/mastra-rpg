@@ -30,23 +30,54 @@ reviews:
     - '!**/mastra.duckdb*'
     - '!**/*.tsbuildinfo'
     - '!public/**'
+    # `vaults/` contains symlinks to dev-local Obsidian vaults. The symlink
+    # targets are intentionally absolute machine-specific paths — that's the
+    # whole point of the symlink. Belt-and-suspenders the exclusion across
+    # glob-implementation quirks.
+    - '!vaults'
+    - '!vaults/*'
     - '!vaults/**'
     - '!skills-lock.json'
   path_instructions:
     - path: '**'
       instructions: |
+        Project context (load before reviewing anything):
+          - Hobby project. Single developer. Machine-specific by design.
+          - v0 target is localhost-only, single user, no auth, no deployment.
+            There is NO untrusted-input boundary in the codebase yet.
+          - Absolute paths under `/Users/valentin/...` in docs, specs, and
+            symlinks are INTENTIONAL references to the dev's local file tree
+            (Obsidian vault location, prior project paths). They are not
+            config drift. Do NOT suggest abstracting them to placeholders,
+            env vars, or repo-relative paths unless a concrete second
+            contributor or CI portability requirement exists.
+          - `vaults/<name>` entries are symlinks. The symlink target is the
+            file's content from git's perspective. Don't flag them as
+            "hardcoded paths in a tracked file" — they're explicitly designed
+            that way.
+
         Global review constraints (apply on top of any path-specific guidance):
           - Don't restate the diff. The summary line should add information the
             reader doesn't already see in the patch.
           - Skip nitpicks, stylistic preferences, and bikeshedding (naming
             taste, comment density, "consider extracting" micro-refactors that
-            don't change behavior).
+            don't change behavior). DO NOT post a "Nitpick comments" section
+            at all — if a finding meets the nitpick bar, drop it; do not
+            include it under a separate header to "be thorough."
           - Don't suggest adding validation layers, retry logic, error
             envelopes, schema enforcement, defensive null checks, or "for
             completeness" tests unless there is an actual caller or failure
             mode that benefits — flag YAGNI on speculative hardening. If the
             affected code has no callers, suggest deletion before suggesting
             elaboration.
+          - Speculative security findings (path traversal, SSRF, CSRF,
+            injection, XSS, ReDoS) are YAGNI when the affected code has no
+            untrusted-input boundary today. v0 reads config from env vars and
+            runs on localhost; there are no HTTP request bodies feeding into
+            the relevant code paths yet. If the threat would only materialize
+            once a future wave wires up the HTTP/route surface, the fix
+            belongs in THAT wave, not in this PR. State the boundary you
+            checked. Do not flag.
           - Verify before asserting. If a claim depends on runtime path
             resolution, CI runner state, framework idioms, or whether a test
             is enforced elsewhere in the suite, say what you checked and what
@@ -67,9 +98,18 @@ reviews:
             null" without identifying a concrete code path that triggers it.
           - For test files: don't suggest renaming tests, adding docstrings,
             splitting cases, or grouping by describe blocks unless the change
-            fixes a real readability or correctness issue.
+            fixes a real readability or correctness issue. Defensive guards
+            in test helpers ("check threadsNode exists before…") are an
+            anti-pattern — tests should fail loud on fixture corruption, not
+            silently guard around it. Non-null assertions (`!`) in test
+            helpers are correct usage; do not flag.
           - For docs/markdown: skip prose-style suggestions ("consider adding a
             section on…") unless the existing content is wrong or misleading.
+            DO NOT flag markdownlint findings (MD040 fence-language, MD013
+            line-length, MD025 single-h1, etc.) — markdownlint is not run in
+            this repo, GitHub renders the docs fine, and intentional bare
+            ```​``` blocks (ASCII diagrams, generic templates, return-contract
+            shapes) stay bare.
     - path: '**/*.{ts,tsx}'
       instructions: |
         - TypeScript codebase on Node.js >=22.13.0. Strict mode is on — flag
