@@ -25,6 +25,11 @@
 - Structured output is configured per-call via `options.structuredOutput.schema`, OR globally via `defaultOptions.structuredOutput.schema`. Wave 4 uses `defaultOptions` so calling `agent.generate(dossier)` in Wave 5 returns `result.object` typed to the schema without re-passing it.
 - `createTool({ id, description, inputSchema, outputSchema, execute })` returns a `Tool`. `execute` receives the validated input object as its first arg and an optional context as its second; we ignore the context in Wave 4.
 - Model strings use `'provider/model-name'`. `openai/gpt-5.5` is in the provider registry (verified via `node scripts/provider-registry.mjs --provider openai`).
+- **Agent introspection (verified against `agent.d.ts:63-90,427,713-722,732`):** `Agent` declares `#private` (line 64), so `defaultOptions` and `tools` are **not** accessible as instance fields. The public surface for tests is:
+  - `agent.id`, `agent.name`, `agent.model` — public class fields (lines 65-68).
+  - `await agent.getDefaultOptions({ requestContext })` — returns `AgentExecutionOptions<TOutput>` (or a Promise of it). This is how we read `defaultOptions.structuredOutput.schema` from outside.
+  - `await agent.getToolsForExecution({ requestContext })` — returns `Promise<Record<string, CoreTool>>`. Keys are derived from the **Object key** the tool was registered under (verified in `formatTools()` inside `node_modules/@mastra/core/dist/chunk-DDFT2H3T.js:28937-28966`): only keys with invalid chars (`[^a-zA-Z0-9_\-]`), keys starting with a digit, or keys longer than 63 chars get sanitized. Our keys (`dice`, `loadEntity`, `image`) are valid identifiers, so they pass through verbatim. The `tool.id` field does **not** drive the key — only the registration key does.
+  - `(agent as ...).defaultOptions` and `agent.getTools?.(...)` are NOT valid surfaces and were used in the previous draft of this plan; they return `undefined` and break the construction tests. Wave 4 tests use the awaitable getters.
 
 ---
 
@@ -89,14 +94,14 @@ Deleted files (cleanup chore baked into Task 7):
 
 Test files (all new):
 
-| File                                    | Coverage                                                                                  |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `src/mastra/tools/dice.test.ts`         | `2d6`, `2d6+1`, `pbta`, `pbta+2`, `advantage`, `disadvantage`, invalid expressions throw. |
-| `src/mastra/tools/loadEntity.test.ts`   | Loads a fixture NPC; returns `{ found: false }` for missing slug; rejects unknown kind.   |
-| `src/mastra/tools/image.test.ts`        | Calls the injected `generateImage` with the right args; returns its `ImageMeta` verbatim. |
-| `src/mastra/agents/narrator.test.ts`    | Construction sanity: id, model, tool keys, has `defaultOptions.structuredOutput.schema`.  |
-| `src/mastra/agents/faction.test.ts`     | Construction sanity: id, model, no tools, schema wired.                                   |
-| `src/mastra/agents/illustrator.test.ts` | Construction sanity: id, model, has `image` tool, schema wired.                           |
+| File                                    | Coverage                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/mastra/tools/dice.test.ts`         | `2d6`, `2d6+1`, `pbta`, `pbta+2`, `advantage`, `disadvantage`, invalid expressions throw.                    |
+| `src/mastra/tools/loadEntity.test.ts`   | Loads a fixture NPC; returns `{ found: false }` for missing slug; rejects unknown kind.                      |
+| `src/mastra/tools/image.test.ts`        | Calls the injected `generateImage` with the right args; returns its `ImageMeta` verbatim.                    |
+| `src/mastra/agents/narrator.test.ts`    | Construction sanity: `id`, `model`, tool keys via `getToolsForExecution`, schema via `getDefaultOptions`.    |
+| `src/mastra/agents/faction.test.ts`     | Construction sanity: `id`, `model`, empty tools via `getToolsForExecution`, schema via `getDefaultOptions`.  |
+| `src/mastra/agents/illustrator.test.ts` | Construction sanity: `id`, `model`, `image` tool via `getToolsForExecution`, schema via `getDefaultOptions`. |
 
 Note on agent tests: Wave 4 does not exercise live LLM calls. The construction tests assert the agent objects have the right shape so registration is verifiable in CI without spending tokens. Live agent smoke testing happens in Wave 5's integration tests and the live smoke script. The Wave-4 exit criterion "All three agents callable from Mastra Studio" is an interactive manual check, not an automated test.
 
@@ -117,6 +122,7 @@ The dice tool is the only Wave-4 file with new domain logic. It's a pure parser+
 - `NdM+K` or `NdM-K` where `K` is a non-negative integer modifier (e.g. `2d6+1`, `1d20-3`).
 - `pbta` (alias for `2d6`) and `pbta+K` / `pbta-K` (alias for `2d6+K` / `2d6-K`).
 - `advantage` (alias for "roll 2d20, take the higher") and `disadvantage` (= "roll 2d20, take the lower"). No modifier suffix.
+- **Upper bounds:** `N <= 100` and `M <= 1000`. Anything above throws as an invalid expression. Prevents an adversarial agent prompt (or LLM hallucination) from tripping a memory/time DoS via `999999d999999`.
 - Anything else: throw `Error('dice: invalid expression: ...')`. Mastra propagates the throw to the agent as a tool error; the agent retries per the spec error matrix.
 
 **Output shape (Zod):**
@@ -205,6 +211,14 @@ describe('rollDice', () => {
 
   it('throws on zero-sided die', () => {
     expect(() => rollDice('2d0', () => 0.5)).toThrow(/invalid expression/);
+  });
+
+  it('throws on N above the upper bound (n > 100)', () => {
+    expect(() => rollDice('101d6', () => 0.5)).toThrow(/invalid expression/);
+  });
+
+  it('throws on M above the upper bound (m > 1000)', () => {
+    expect(() => rollDice('1d1001', () => 0.5)).toThrow(/invalid expression/);
   });
 });
 
@@ -297,7 +311,8 @@ export function rollDice(rawExpression: string, rng: () => number = Math.random)
     const n = parseInt(ndmMatch[1], 10);
     const m = parseInt(ndmMatch[2], 10);
     const mod = ndmMatch[3] ? parseInt(ndmMatch[3], 10) : 0;
-    if (n <= 0 || m <= 0) {
+    // Upper bounds prevent DoS via `999999d999999` from an adversarial / hallucinated prompt.
+    if (n <= 0 || m <= 0 || n > 100 || m > 1000) {
       throw new Error(`dice: invalid expression: ${rawExpression}`);
     }
     return rollNdMWithMod(expression, n, m, mod, rng);
@@ -441,7 +456,7 @@ describe('loadEntityImpl', () => {
     expect(res.found).toBe(true);
   });
 
-  it('returns { found: false } for a missing slug', async () => {
+  it('returns { found: false } for a missing slug (ENOENT)', async () => {
     const res = await loadEntityImpl(
       { kind: 'npc', slug: 'does-not-exist' },
       { vaultRoot: FIXTURE_ROOT },
@@ -451,6 +466,24 @@ describe('loadEntityImpl', () => {
     expect(res.kind).toBe('npc');
     expect(res.slug).toBe('does-not-exist');
     expect(res.error).toMatch(/ENOENT|no such file/i);
+  });
+
+  it('rethrows non-ENOENT loader errors (e.g. malformed entity) instead of masking as not-found', async () => {
+    // The Wave-1 loaders throw with ENOENT on a missing file, but they ALSO
+    // throw on malformed YAML or missing frontmatter. We must let those bubble
+    // up so real bugs don't hide behind a misleading `{ found: false }`.
+    // Inject a loader override via the deps seam; the tool should rethrow.
+    const badLoader = async () => {
+      const err: NodeJS.ErrnoException = new Error('malformed yaml');
+      err.code = 'EBADF';
+      throw err;
+    };
+    await expect(
+      loadEntityImpl(
+        { kind: 'npc', slug: 'malformed' },
+        { vaultRoot: FIXTURE_ROOT, loaders: { npc: badLoader } },
+      ),
+    ).rejects.toThrow(/malformed yaml/);
   });
 });
 
@@ -475,16 +508,23 @@ Expected: FAIL with "Cannot find module './loadEntity'".
 ```ts
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { loadNpc, loadFaction, loadLocation } from '@/lib/vault/entities';
+import {
+  loadNpc as defaultLoadNpc,
+  loadFaction as defaultLoadFaction,
+  loadLocation as defaultLoadLocation,
+  type EntityDoc,
+} from '@/lib/vault/entities';
 import { vaultRoot } from '@/lib/vault/paths';
 
 /**
  * Read-only entity loader. Wraps the Wave-1 loaders; the file-missing case
  * returns `{ found: false }` instead of throwing so the agent can decide
- * whether to use a stub or skip (spec error matrix line 343).
+ * whether to use a stub or skip (spec error matrix line 343). Any other
+ * loader error (malformed YAML, missing frontmatter, FS permission, etc.)
+ * is re-thrown so real bugs surface rather than masquerading as not-found.
  *
  * Vault root resolution: defaults to `vaultRoot(process.env.VAULT_SLUG)`.
- * Tests override via `deps.vaultRoot`.
+ * Tests override via `deps.vaultRoot` (and optionally `deps.loaders`).
  */
 export type EntityKind = 'npc' | 'faction' | 'location';
 
@@ -493,8 +533,15 @@ export interface LoadEntityInput {
   slug: string;
 }
 
+export type EntityLoader = (root: string, slug: string) => Promise<EntityDoc>;
+
 export interface LoadEntityDeps {
   vaultRoot?: string;
+  /**
+   * Override the kind→loader map. Only used by tests; production runs always
+   * resolve to the Wave-1 `loadNpc` / `loadFaction` / `loadLocation`.
+   */
+  loaders?: Partial<Record<EntityKind, EntityLoader>>;
 }
 
 export type LoadEntityResult =
@@ -521,6 +568,9 @@ export async function loadEntityImpl(
   deps?: LoadEntityDeps,
 ): Promise<LoadEntityResult> {
   const root = resolveRoot(deps);
+  const loadNpc = deps?.loaders?.npc ?? defaultLoadNpc;
+  const loadFaction = deps?.loaders?.faction ?? defaultLoadFaction;
+  const loadLocation = deps?.loaders?.location ?? defaultLoadLocation;
   try {
     const doc =
       input.kind === 'npc'
@@ -536,8 +586,15 @@ export async function loadEntityImpl(
       body: doc.body,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { found: false, kind: input.kind, slug: input.slug, error: msg };
+    // Only the spec-defined missing-slug case (ENOENT) becomes { found: false }.
+    // Malformed YAML, missing frontmatter, FS permission errors etc. must surface
+    // as real exceptions so bugs don't hide behind a misleading "not found" shape.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT') {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { found: false, kind: input.kind, slug: input.slug, error: msg };
+    }
+    throw err;
   }
 }
 
@@ -580,7 +637,15 @@ pnpm vitest src/mastra/tools/loadEntity.test.ts --run
 
 Expected: all loadEntity tests PASS.
 
-- [ ] **Step 5: Commit.**
+- [ ] **Step 5: Verify TypeScript accepts the Zod 4 schema.**
+
+```bash
+pnpm tsc --noEmit
+```
+
+Expected: zero TS errors. The `z.record(z.string(), z.unknown())` signature is correct in Zod 4 (it requires both the key schema and value schema as positional args). If this errors, fall back to `z.record(z.string(), z.any())`.
+
+- [ ] **Step 6: Commit.**
 
 ```bash
 git add src/mastra/tools/loadEntity.ts src/mastra/tools/loadEntity.test.ts
@@ -607,7 +672,7 @@ Thin adapter over `generateImage` from `src/lib/media/image.ts`. The illustrator
 Create `src/mastra/tools/image.test.ts`:
 
 ```ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -618,6 +683,12 @@ async function tmpVault(): Promise<string> {
 }
 
 describe('imageImpl', () => {
+  // vi.stubEnv mutations are reverted automatically by vi.unstubAllEnvs, so the
+  // missing-env test below cannot leak its mutation into other parallel tests.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('delegates to generateImage with prompt + slug + resolved vaultRoot and returns ImageMeta', async () => {
     const vaultRoot = await tmpVault();
     const fakeMeta = {
@@ -641,15 +712,12 @@ describe('imageImpl', () => {
 
   it('throws if VAULT_SLUG is unset and no deps.vaultRoot is provided', async () => {
     const generate = vi.fn();
-    const prev = process.env.VAULT_SLUG;
-    delete process.env.VAULT_SLUG;
-    try {
-      await expect(
-        imageImpl({ prompt: 'p', slug: 's' }, { generateImage: generate }),
-      ).rejects.toThrow(/VAULT_SLUG/);
-    } finally {
-      if (prev !== undefined) process.env.VAULT_SLUG = prev;
-    }
+    // stubEnv records the original value and is restored by unstubAllEnvs in
+    // afterEach — safer than direct process.env mutation across parallel tests.
+    vi.stubEnv('VAULT_SLUG', '');
+    await expect(
+      imageImpl({ prompt: 'p', slug: 's' }, { generateImage: generate }),
+    ).rejects.toThrow(/VAULT_SLUG/);
   });
 });
 
@@ -676,6 +744,14 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { generateImage } from '@/lib/media/image';
 import { vaultRoot } from '@/lib/vault/paths';
+// NOTE: `@/lib/schemas` exports `ImageMeta` as BOTH a Zod schema (runtime value)
+// AND a TS type alias (`z.infer<typeof ImageMeta>`) under the same name. This
+// dual export pattern is fragile — `import { ImageMeta }` here resolves to the
+// runtime value (the Zod schema), which is what `outputSchema` needs. The
+// `Promise<ImageMeta>` return type below resolves to the type alias via TS's
+// type-vs-value namespace separation. Keep both usages consistent: type
+// positions get the type, value positions (outputSchema, runtime checks) get
+// the Zod schema.
 import { ImageMeta } from '@/lib/schemas';
 
 /**
@@ -767,29 +843,30 @@ import { describe, it, expect } from 'vitest';
 import { factionAgent } from './faction';
 import { FactionOutput } from '@/lib/schemas';
 
+// Cast the empty request context once; @mastra/core@1.32.1 declares
+// RequestContext as `Map<string, any>`-ish, but the `requestContext` parameter
+// on getDefaultOptions / getToolsForExecution is optional and the empty object
+// is accepted at runtime (it just falls through to the static defaults).
+const REQ_CTX = {} as never;
+
 describe('factionAgent', () => {
   it('has id "faction" and model "openai/gpt-5.5"', () => {
+    // `id`, `name`, and `model` are public class fields per agent.d.ts:65-68.
     expect(factionAgent.id).toBe('faction');
-    // Mastra normalises the model string onto the agent under .modelId or .model;
-    // we read whichever surface the SDK exposes via a generic getter.
-    const model: unknown =
-      (factionAgent as unknown as { model?: unknown }).model ??
-      (factionAgent as unknown as { modelId?: unknown }).modelId;
-    expect(model).toBe('openai/gpt-5.5');
+    expect(factionAgent.model).toBe('openai/gpt-5.5');
   });
 
   it('has no tools in v0', async () => {
-    const tools = await factionAgent.getTools?.({ requestContext: {} as any });
-    expect(tools === undefined || Object.keys(tools).length === 0).toBe(true);
+    // `tools` is a private field (`#private` on agent.d.ts:64); read via the
+    // public getter. Returns Promise<Record<string, CoreTool>>.
+    const tools = await factionAgent.getToolsForExecution({ requestContext: REQ_CTX });
+    expect(Object.keys(tools)).toEqual([]);
   });
 
-  it('wires FactionOutput as its default structured output schema', () => {
-    const defaults = (
-      factionAgent as unknown as {
-        defaultOptions?: { structuredOutput?: { schema?: unknown } };
-      }
-    ).defaultOptions;
-    expect(defaults?.structuredOutput?.schema).toBe(FactionOutput);
+  it('wires FactionOutput as its default structured output schema', async () => {
+    // `defaultOptions` is private; read via the public getter.
+    const defaults = await factionAgent.getDefaultOptions({ requestContext: REQ_CTX });
+    expect(defaults.structuredOutput?.schema).toBe(FactionOutput);
   });
 });
 ```
@@ -879,29 +956,26 @@ import { describe, it, expect } from 'vitest';
 import { narratorAgent } from './narrator';
 import { NarratorOutput } from '@/lib/schemas';
 
+const REQ_CTX = {} as never;
+
 describe('narratorAgent', () => {
   it('has id "narrator" and model "openai/gpt-5.5"', () => {
     expect(narratorAgent.id).toBe('narrator');
-    const model: unknown =
-      (narratorAgent as unknown as { model?: unknown }).model ??
-      (narratorAgent as unknown as { modelId?: unknown }).modelId;
-    expect(model).toBe('openai/gpt-5.5');
+    expect(narratorAgent.model).toBe('openai/gpt-5.5');
   });
 
   it('wires loadEntity and dice as tools', async () => {
-    const tools = await narratorAgent.getTools?.({ requestContext: {} as any });
-    expect(tools).toBeDefined();
-    const keys = Object.keys(tools as Record<string, unknown>);
-    expect(keys.sort()).toEqual(['dice', 'loadEntity']);
+    const tools = await narratorAgent.getToolsForExecution({ requestContext: REQ_CTX });
+    // Tool keys are derived from the Object key the tool was registered under
+    // (formatTools() in chunk-DDFT2H3T.js:28937-28966 only sanitizes keys with
+    // invalid chars). `loadEntity` and `dice` are valid identifiers — passed
+    // through verbatim. The `tool.id` field does NOT drive the key.
+    expect(Object.keys(tools).sort()).toEqual(['dice', 'loadEntity']);
   });
 
-  it('wires NarratorOutput as its default structured output schema', () => {
-    const defaults = (
-      narratorAgent as unknown as {
-        defaultOptions?: { structuredOutput?: { schema?: unknown } };
-      }
-    ).defaultOptions;
-    expect(defaults?.structuredOutput?.schema).toBe(NarratorOutput);
+  it('wires NarratorOutput as its default structured output schema', async () => {
+    const defaults = await narratorAgent.getDefaultOptions({ requestContext: REQ_CTX });
+    expect(defaults.structuredOutput?.schema).toBe(NarratorOutput);
   });
 });
 ```
@@ -990,6 +1064,8 @@ git commit -m "feat(agents): narrator agent with loadEntity + dice tools and Nar
 
 The illustrator gets the narrator's prose plus the `## Visual` style block and the on-stage entities, fires 0-3 parallel `image` tool calls, and returns `{ prose_with_embeds, images }` — the narrator's prose with `![[file.png]]` embeds inserted at the right beats.
 
+**Spec deviation — `## Visual` block prepending.** Spec §97 ("Component layout") says `image.ts` is responsible for prepending the project's `## Visual` style block to every image prompt before calling `gpt-image-2`. The actual Wave-3 `generateImage` does NOT do this — it sends the prompt verbatim. Rather than retrofit Wave-3 code from Wave 4, we make the **illustrator agent** responsible for prepending the `## Visual` directives in its prompt string before each `image` tool call (see system prompt below: "include the ## Visual block's directives in every prompt yourself"). This keeps the image tool as a thin, predictable wrapper and aligns with the spec's intent (every image inherits the style guide) even though the placement of the prepend moves up one layer. Calling this out so a future reviewer reading the spec text doesn't flag it as a violation.
+
 - [ ] **Step 1: Write failing test.**
 
 Create `src/mastra/agents/illustrator.test.ts`:
@@ -999,28 +1075,22 @@ import { describe, it, expect } from 'vitest';
 import { illustratorAgent } from './illustrator';
 import { IllustratorOutput } from '@/lib/schemas';
 
+const REQ_CTX = {} as never;
+
 describe('illustratorAgent', () => {
   it('has id "illustrator" and model "openai/gpt-5.5"', () => {
     expect(illustratorAgent.id).toBe('illustrator');
-    const model: unknown =
-      (illustratorAgent as unknown as { model?: unknown }).model ??
-      (illustratorAgent as unknown as { modelId?: unknown }).modelId;
-    expect(model).toBe('openai/gpt-5.5');
+    expect(illustratorAgent.model).toBe('openai/gpt-5.5');
   });
 
   it('wires the image tool', async () => {
-    const tools = await illustratorAgent.getTools?.({ requestContext: {} as any });
-    expect(tools).toBeDefined();
-    expect(Object.keys(tools as Record<string, unknown>)).toEqual(['image']);
+    const tools = await illustratorAgent.getToolsForExecution({ requestContext: REQ_CTX });
+    expect(Object.keys(tools)).toEqual(['image']);
   });
 
-  it('wires IllustratorOutput as its default structured output schema', () => {
-    const defaults = (
-      illustratorAgent as unknown as {
-        defaultOptions?: { structuredOutput?: { schema?: unknown } };
-      }
-    ).defaultOptions;
-    expect(defaults?.structuredOutput?.schema).toBe(IllustratorOutput);
+  it('wires IllustratorOutput as its default structured output schema', async () => {
+    const defaults = await illustratorAgent.getDefaultOptions({ requestContext: REQ_CTX });
+    expect(defaults.structuredOutput?.schema).toBe(IllustratorOutput);
   });
 });
 ```
@@ -1104,11 +1174,14 @@ git commit -m "feat(agents): illustrator agent with image tool and IllustratorOu
 **Files:**
 
 - Modify: `src/mastra/index.ts`
+- Modify: `package.json` (drop `@mastra/memory` dependency once `weather-agent.ts` is gone)
 - Delete: `src/mastra/agents/weather-agent.ts`
 - Delete: `src/mastra/tools/weather-tool.ts`
 - Delete: `src/mastra/workflows/weather-workflow.ts`
 
-The current `src/mastra/index.ts` registers the leftover `weatherWorkflow` and `weatherAgent`. Wave 4 swaps them out for the three RPG agents. There is no Wave-4 workflow yet — that's Wave 5 — so the `workflows` key is set to `{}` (Mastra accepts an empty object). Storage, logger, and observability blocks are untouched.
+The current `src/mastra/index.ts` registers the leftover `weatherWorkflow` and `weatherAgent`. Wave 4 swaps them out for the three RPG agents. There is no Wave-4 workflow yet — that's Wave 5 — so we OMIT the `workflows` key entirely (it is declared `workflows?: TWorkflows` on `Config<...>` in `mastra/index.d.ts:96`, so dropping it is cleaner than passing `{}` and avoids any ambiguity if Mastra later starts complaining about empty registries). Storage, logger, and observability blocks are untouched.
+
+The current `weather-agent.ts` imports `@mastra/memory` (`import { Memory } from '@mastra/memory'`). Verified via `grep -rn '@mastra/memory' src` that NO other file in `src/` imports `@mastra/memory`. Once the weather agent is deleted, the dependency in `package.json` is orphaned and we drop it as part of this task.
 
 - [ ] **Step 1: Write a failing test that asserts Mastra exposes the three RPG agents and no weather scaffolding.**
 
@@ -1120,7 +1193,10 @@ import { mastra } from './index';
 
 describe('mastra registration', () => {
   it('registers narrator, faction, illustrator', () => {
-    const agents = mastra.getAgents();
+    // `listAgents()` is the public, plural getter on Mastra@1.32.1
+    // (verified at node_modules/@mastra/core/dist/mastra/index.d.ts:591).
+    // There is no `getAgents()`.
+    const agents = mastra.listAgents();
     expect(Object.keys(agents).sort()).toEqual([
       'factionAgent',
       'illustratorAgent',
@@ -1129,9 +1205,11 @@ describe('mastra registration', () => {
   });
 
   it('does not register weather-agent / weather-workflow', () => {
-    const agents = mastra.getAgents();
+    const agents = mastra.listAgents();
     expect(agents).not.toHaveProperty('weatherAgent');
-    const workflows = mastra.getWorkflows();
+    // `listWorkflows()` returns an object map (verified at
+    // node_modules/@mastra/core/dist/mastra/index.d.ts:1312).
+    const workflows = mastra.listWorkflows();
     expect(workflows).not.toHaveProperty('weatherWorkflow');
   });
 });
@@ -1166,7 +1244,8 @@ import { factionAgent } from './agents/faction';
 import { illustratorAgent } from './agents/illustrator';
 
 export const mastra = new Mastra({
-  workflows: {},
+  // `workflows` is optional (Config.workflows?: TWorkflows). Omit it rather
+  // than pass `{}` — cleaner, no ambiguity. Wave 5 will add the workflow back.
   agents: { narratorAgent, factionAgent, illustratorAgent },
   storage: new MastraCompositeStore({
     id: 'composite-storage',
@@ -1202,7 +1281,23 @@ git rm src/mastra/agents/weather-agent.ts \
        src/mastra/workflows/weather-workflow.ts
 ```
 
-- [ ] **Step 5: Run the registration test to verify it now passes.**
+- [ ] **Step 5: Verify `@mastra/memory` is no longer imported anywhere in `src/`.**
+
+```bash
+grep -rn '@mastra/memory' src
+```
+
+Expected: ZERO matches. (Before the deletion above, only `src/mastra/agents/weather-agent.ts` imported it.) If anything still matches, STOP — the import-chain analysis was incomplete and the dependency cannot be safely dropped.
+
+- [ ] **Step 6: Drop the orphaned `@mastra/memory` dependency from `package.json`.**
+
+```bash
+pnpm remove @mastra/memory
+```
+
+Expected: package.json updated, lockfile updated, install completes clean. If `pnpm remove` complains about a missing entry, the dependency was already gone — proceed.
+
+- [ ] **Step 7: Run the registration test to verify it now passes.**
 
 ```bash
 pnpm vitest src/mastra/index.test.ts --run
@@ -1210,7 +1305,7 @@ pnpm vitest src/mastra/index.test.ts --run
 
 Expected: registration test PASSES.
 
-- [ ] **Step 6: Run the entire test suite to confirm no regression.**
+- [ ] **Step 8: Run the entire test suite to confirm no regression.**
 
 ```bash
 pnpm test --run
@@ -1218,7 +1313,7 @@ pnpm test --run
 
 Expected: all tests across Waves 1-4 PASS. (Coverage on the new Wave-4 surface is enforced via Task 9 below.)
 
-- [ ] **Step 7: Run lint and typecheck.**
+- [ ] **Step 9: Run lint and typecheck.**
 
 ```bash
 pnpm lint
@@ -1226,55 +1321,45 @@ pnpm lint
 
 Expected: zero ESLint errors. If TypeScript surfaces an error here (Next.js's ESLint config includes the TS plugin) — fix it before moving on.
 
-- [ ] **Step 8: Commit.**
+- [ ] **Step 10: Commit.**
 
 ```bash
-git add src/mastra/index.ts src/mastra/index.test.ts
+git add src/mastra/index.ts src/mastra/index.test.ts package.json pnpm-lock.yaml
 git commit -m "feat(mastra): register narrator/faction/illustrator agents; drop weather scaffolding"
 ```
 
 ---
 
-## Task 8: Manual Studio smoke test (no code changes)
+## Task 8: Manual Studio smoke test (HUMAN-ONLY — not actionable by CI / orchestrator)
 
 **Files:** none. This is the spec's exit criterion "All three agents callable from Mastra Studio (`pnpm dev`) with hand-built dossiers."
 
-The pipeline executes this as a documented manual check before the human-merge gate. The orchestrator does not block on it — failures here are filed as separate tickets.
+**SKIP THIS TASK IF YOU ARE A CI AGENT OR ORCHESTRATOR.** `pnpm dev` is a long-running interactive process; running it in the background will hang the pipeline indefinitely without producing actionable output. The steps below are documented for a human to execute by hand once between plan-approval and final-merge. The orchestrator records "manual smoke documented" as a textual exit criterion in the PR description; it does not run these steps.
 
-- [ ] **Step 1: Start Mastra Studio.**
+Concretely: there are NO `- [ ]` checkboxes in this task. The procedure below is a numbered runbook for a human. If a CI agent reaches this section, it should advance to Task 9 without action.
 
-```bash
-pnpm dev
-```
+**Runbook (human-only):**
 
-Expected: Studio is reachable at `http://localhost:4111`. The agent panel lists `narrator`, `faction`, `illustrator` (no `weather-agent`).
-
-- [ ] **Step 2: In Studio, invoke `faction` with a minimal hand-built dossier string** (paste verbatim):
-
-```
-<world calendar="Northern" date="Spring of 1894"><region>The Strake</region><city>Iron Promise</city><weather>cold rain</weather><season>spring</season></world>
-<character><name>Vex</name><role>Smuggler</role></character>
-<faction slug="red-banner">The Red Banner enforces dockside extortion in Iron Promise. Their captain is Kessha.</faction>
-<on_stage><npc slug="kessha" faction="red-banner">Kessha is the Red Banner's captain. Volatile, holds a grudge.</npc></on_stage>
-<recent_journal>(none — first turn)</recent_journal>
-<player_input>I tell Kessha I will not pay her tax this week.</player_input>
-```
-
-Expected: a response with `decision` (a short faction action) and `reasoning` (a short rationale). Both non-empty strings. No schema validation error.
-
-- [ ] **Step 3: In Studio, invoke `narrator`** with a hand-built dossier that includes the faction decision from Step 2 (paste and edit). Expected: a `prose` field (markdown narration mentioning Kessha and the faction's decision) and optional `time_passed`. May see a `dice` or `loadEntity` tool call in the trace pane.
-
-- [ ] **Step 4: In Studio, invoke `illustrator`** with the narrator's `prose` from Step 3 wrapped as:
-
-```
-<visual_style>Ink-and-wash sketches, sepia and bone-white, low contrast, candlelit interiors.</visual_style>
-<narrator_prose>{paste the prose}</narrator_prose>
-<on_stage>{paste from Step 2}</on_stage>
-```
-
-Expected: `prose_with_embeds` either matches the input prose verbatim (zero images) or has `![[...png]]` lines inserted, and `images` is an array of 0-3 `ImageMeta` records. **Tooling note:** this step actually hits `gpt-image-2` if illustrator chooses to call the tool, so a small OpenAI bill is real. If a key is not present, expect a tool error in the trace and a `prose_with_embeds` equal to the input prose.
-
-- [ ] **Step 5: Stop Mastra Studio (`Ctrl+C`) and record the manual smoke result in the PR description.**
+1. Start Mastra Studio: `pnpm dev`. Verify the agent panel at `http://localhost:4111` lists `narrator`, `faction`, `illustrator` (no `weather-agent`).
+2. In Studio, invoke `faction` with the minimal hand-built dossier:
+   ```
+   <world calendar="Northern" date="Spring of 1894"><region>The Strake</region><city>Iron Promise</city><weather>cold rain</weather><season>spring</season></world>
+   <character><name>Vex</name><role>Smuggler</role></character>
+   <faction slug="red-banner">The Red Banner enforces dockside extortion in Iron Promise. Their captain is Kessha.</faction>
+   <on_stage><npc slug="kessha" faction="red-banner">Kessha is the Red Banner's captain. Volatile, holds a grudge.</npc></on_stage>
+   <recent_journal>(none — first turn)</recent_journal>
+   <player_input>I tell Kessha I will not pay her tax this week.</player_input>
+   ```
+   Expected: a response with `decision` and `reasoning`. Both non-empty strings. No schema validation error.
+3. In Studio, invoke `narrator` with a dossier that includes the faction decision from step 2 (paste and edit). Expected: a `prose` field (markdown narration mentioning Kessha and the faction's decision) and optional `time_passed`. May see a `dice` or `loadEntity` tool call in the trace pane.
+4. In Studio, invoke `illustrator` with the narrator's `prose` from step 3 wrapped as:
+   ```
+   <visual_style>Ink-and-wash sketches, sepia and bone-white, low contrast, candlelit interiors.</visual_style>
+   <narrator_prose>{paste the prose}</narrator_prose>
+   <on_stage>{paste from step 2}</on_stage>
+   ```
+   Expected: `prose_with_embeds` either matches the input prose verbatim (zero images) or has `![[...png]]` lines inserted, and `images` is an array of 0-3 `ImageMeta` records. **Tooling note:** this step actually hits `gpt-image-2` if illustrator chooses to call the tool, so a small OpenAI bill is real. If a key is not present, expect a tool error in the trace and a `prose_with_embeds` equal to the input prose.
+5. Stop Mastra Studio (`Ctrl+C`) and record the manual smoke result in the PR description.
 
 ---
 
@@ -1285,6 +1370,8 @@ Expected: `prose_with_embeds` either matches the input prose verbatim (zero imag
 - Modify: `vitest.config.ts`
 
 The Wave-3 commit extended the coverage gate to cover `src/lib/schemas.ts`, `src/lib/dossier.ts`, and `src/lib/media/**`. Wave 4 adds production code in `src/mastra/tools/**` and `src/mastra/agents/**` that should be held to the same 80% bar. The construction tests for agents are minimal; the tool tests are real unit tests against real logic.
+
+**Coverage caveat — agent files are nearly all data.** Each agent file is `Agent` constructor call + a multi-line system-prompt string constant. The string constants are NOT executable, so they do NOT contribute to branch coverage at all; the entire file's branch coverage reduces to "did `new Agent({...})` run". As long as the file is imported by a test (which the construction tests do), branch coverage is trivially 100%. Lines coverage will be high for the same reason — system-prompt lines count as covered the moment the module is loaded. This is not gaming the gate; the agent files are intentionally thin and exhaustive coverage of a string literal is not a meaningful test. The Wave-5 integration tests will exercise the agents' actual call surface end-to-end.
 
 - [ ] **Step 1: Read the current config.**
 
@@ -1438,3 +1525,40 @@ Expected: Next.js + Mastra production build succeeds. (The Mastra runtime is som
 - `createTool` signature (`{ id, description, inputSchema, outputSchema, execute }`) matches the SDK reference docs and the existing `weather-tool` pattern.
 
 **Scope:** Wave 4 only. No workflow orchestration (Wave 5), no API route (Wave 6), no UI (Wave 6). Each task is independently testable and commits a working slice.
+
+**Reviewer-flagged caveats explicitly addressed:**
+
+- Agent construction tests use `agent.getDefaultOptions(...)` and `agent.getToolsForExecution(...)` — the SDK's documented public introspection surface — not the private `defaultOptions` / `tools` fields. Verified against `node_modules/@mastra/core@1.32.1/dist/agent/agent.d.ts:427,713-722`.
+- `@mastra/memory` is removed from `package.json` in Task 7 step 6 after verifying no other `src/` file imports it (Task 7 step 5).
+- Tool keys in `getToolsForExecution`'s return value are derived from the **Object key** the tool was registered under (verified in `formatTools()` at `node_modules/@mastra/core/dist/chunk-DDFT2H3T.js:28937-28966`). `dice`, `loadEntity`, and `image` are valid identifiers and pass through verbatim.
+- Mastra config's `workflows` key is optional (`Config.workflows?: TWorkflows`); Task 7 OMITS the key rather than pass `{}`.
+- Coverage on `src/mastra/agents/**/*.ts` is dominated by string-constant lines that do not contribute to branch coverage; effectively the 80% gate verifies "the file loads and the `Agent` constructor doesn't throw". Wave 5 integration tests exercise the live agent surface end-to-end.
+- The illustrator agent prepends the `## Visual` directives in its prompt string before each `image` tool call — a deliberate one-layer shift from spec §97 (which assigns the prepend to `image.ts`). Wave 3's `generateImage` was implemented without the prepend; Wave 4 puts the responsibility on the agent rather than retrofit prior-wave code.
+
+---
+
+## Revision log
+
+Iteration 2 (this revision) addresses the reviewer feedback from iteration 1. Each item is recorded below with a short verification note and an Apply / Skip / Modify decision.
+
+### Blocking
+
+1. **Agent introspection in agent tests targets non-existent surfaces.** APPLIED. Verified against `node_modules/@mastra/core@1.32.1/dist/agent/agent.d.ts`: `#private` (line 64) confirms `defaultOptions` and `tools` are not accessible as instance fields; the public surface is `getDefaultOptions({ requestContext })` (line 427) and `getToolsForExecution({ requestContext })` (lines 713-722). Public class fields are `id`, `name`, and `model` (lines 65-68). Rewrote Tasks 4/5/6 step-1 tests to call the awaitable getters and read `agent.id` / `agent.model` directly. Also added an explicit "Confirmed Mastra SDK shape" bullet documenting the introspection surface with source-map line references.
+2. **Plan does not delete the `weather-agent.ts` import-chain dependency on `@mastra/memory`.** APPLIED. Verified via `grep -rn '@mastra/memory' src` that only `weather-agent.ts` imports it. Added Task 7 step 5 (`grep` verification) and step 6 (`pnpm remove @mastra/memory`). Task 7's file list now includes `package.json`, and the final commit picks up `package.json` and `pnpm-lock.yaml`.
+3. **Object-key-vs-`tool.id` claim about tool naming.** APPLIED with correction. The reviewer's claim was inverted: per `formatTools()` in `node_modules/@mastra/core/dist/chunk-DDFT2H3T.js:28937-28966`, keys are derived from the **Object key**, not from `tool.id`. Only keys containing `[^a-zA-Z0-9_\-]`, starting with a non-letter, or exceeding 63 chars get sanitized. The plan's keys (`dice`, `loadEntity`, `image`) are valid identifiers and pass through verbatim, so the test's expectation of those exact keys is correct. Rewrote the narrator/illustrator tool tests to call `getToolsForExecution(...)` and assert on `Object.keys(tools).sort()`, with an inline comment documenting the source-map line and why the keys are stable. The reviewer's suggestion is implemented; the reviewer's "Mastra normalizes from `tool.id`" reasoning is documented as inverted.
+
+### Minor
+
+4. **`imageImpl` test mutates `process.env.VAULT_SLUG` without isolation.** APPLIED. Switched to `vi.stubEnv('VAULT_SLUG', '')` with an `afterEach(() => vi.unstubAllEnvs())` block so the mutation cannot leak to parallel tests.
+5. **`loadEntityImpl` swallows all errors as `{ found: false }`.** APPLIED. Narrowed the catch to `NodeJS.ErrnoException.code === 'ENOENT'`; everything else (malformed YAML, missing frontmatter, FS permission) is re-thrown. Added an injectable `deps.loaders` seam and a unit test that asserts a non-ENOENT loader error is re-thrown rather than masked.
+6. **`dice` parser lacks upper bounds on N/M.** APPLIED. Added `N <= 100` and `M <= 1000` guards in `rollDice`, with two new test cases (`101d6` and `1d1001` both throw). The same `dice: invalid expression: ...` error class is reused so the agent's retry path is unchanged.
+7. **`pbta` regex accepts `pbta-0` / `pbta+0`; verify breakdown formatting.** ACKNOWLEDGED — the existing `rollNdMWithMod` already handles `mod === 0` correctly (`modText = ''`, no suffix in the breakdown), so `pbta+0` produces `'pbta+0: [a, b] = total'` and `pbta` alone produces `'pbta: [a, b] = total'`. The existing dice test for `pbta+2` covers the non-zero case; the zero-mod case is implicit (it's the `pbta` test scenario, which uses no suffix). No code change needed; reviewer's note kept as a self-review reminder.
+8. **`outputSchema: ImageMeta` shadows the type alias.** APPLIED. Added a multi-line comment to `src/mastra/tools/image.ts` explaining the dual export pattern (`ImageMeta` is both a Zod schema runtime value and a TS type alias under the same name in `@/lib/schemas`) and why the import resolves to the runtime value in `outputSchema` position and the type alias in type position.
+9. **Task 7 sets `workflows: {}`; verify Mastra accepts it / drop the key.** APPLIED. Verified `Config.workflows?: TWorkflows` is optional at `mastra/index.d.ts:96`. Dropped the `workflows: {}` line from Task 7's `new Mastra({...})` body; only `agents`, `storage`, `logger`, `observability` remain.
+10. **Coverage gate caveat: agent files are mostly string constants.** APPLIED. Added an explicit note in Task 9 and in the self-review checklist: agent file branch coverage reduces to "the file loads and `new Agent({...})` doesn't throw"; system-prompt string lines don't count toward branches. Wave 5 integration tests exercise the live agent surface.
+11. **Illustrator agent's `## Visual` block prepending deviates from spec §97.** APPLIED. Added an explicit "Spec deviation" callout to Task 6: spec §97 assigns the prepend to `image.ts`, but Wave 3's `generateImage` was implemented without it. Wave 4 puts the responsibility on the illustrator agent's system prompt rather than retrofit Wave-3 code. Documented up-front so a future reviewer doesn't flag this as a spec violation.
+
+### Nice-to-have
+
+12. **Zod 4's `z.record(z.string(), z.unknown())` signature.** APPLIED. Added Task 2 step 5 (`pnpm tsc --noEmit`) to verify TS accepts the schema, with a fallback note (`z.any()`) if it errors.
+13. **Manual smoke test (Task 8) is non-actionable in CI.** APPLIED. Removed all `- [ ]` checkboxes from Task 8 and rewrote it as a "HUMAN-ONLY" runbook with an explicit "SKIP THIS TASK IF YOU ARE A CI AGENT OR ORCHESTRATOR" notice up front. The orchestrator records "manual smoke documented" as a textual exit criterion in the PR description; it does not run `pnpm dev`.
