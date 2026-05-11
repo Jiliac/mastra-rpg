@@ -1,0 +1,226 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: 'en-US'
+tone_instructions: "Direct and technical; signal, not encouragement. Skip stylistic nitpicks. Verify before asserting; if you can't reproduce the concern, skip the comment. State which half of half-right findings is right."
+
+early_access: true
+enable_free_tier: true
+
+reviews:
+  profile: 'assertive'
+  high_level_summary: true
+  collapse_walkthrough: true
+  request_changes_workflow: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - 'main'
+  path_filters:
+    - '!**/*.lock'
+    - '!**/pnpm-lock.yaml'
+    - '!**/node_modules/**'
+    - '!**/.next/**'
+    - '!**/.turbo/**'
+    - '!**/dist/**'
+    - '!**/build/**'
+    - '!**/coverage/**'
+    - '!**/.mastra/**'
+    - '!**/mastra.db*'
+    - '!**/mastra.duckdb*'
+    - '!**/*.tsbuildinfo'
+    - '!public/**'
+    - '!vaults/**'
+    - '!skills-lock.json'
+  path_instructions:
+    - path: '**'
+      instructions: |
+        Global review constraints (apply on top of any path-specific guidance):
+          - Don't restate the diff. The summary line should add information the
+            reader doesn't already see in the patch.
+          - Skip nitpicks, stylistic preferences, and bikeshedding (naming
+            taste, comment density, "consider extracting" micro-refactors that
+            don't change behavior).
+          - Don't suggest adding validation layers, retry logic, error
+            envelopes, schema enforcement, defensive null checks, or "for
+            completeness" tests unless there is an actual caller or failure
+            mode that benefits — flag YAGNI on speculative hardening. If the
+            affected code has no callers, suggest deletion before suggesting
+            elaboration.
+          - Verify before asserting. If a claim depends on runtime path
+            resolution, CI runner state, framework idioms, or whether a test
+            is enforced elsewhere in the suite, say what you checked and what
+            you couldn't verify. Don't hand-wave with "this might cause…" —
+            either reproduce the concern or skip the comment.
+          - Half-right findings: state which half is right and what should
+            change. Don't pad with the half that isn't.
+          - Don't suggest adding tests "for coverage" — only if there is a
+            specific behavior the existing tests don't exercise. Name the
+            behavior.
+          - Don't recommend introducing libraries, frameworks, or patterns that
+            aren't already used in the codebase without saying why a hand-rolled
+            solution is insufficient.
+          - Don't flag "magic numbers" or "consider a constant" unless the value
+            recurs or is non-obvious. One-shot literals in tests, fixtures, and
+            seed data are fine.
+          - Don't speculate about "potential race conditions" or "potential
+            null" without identifying a concrete code path that triggers it.
+          - For test files: don't suggest renaming tests, adding docstrings,
+            splitting cases, or grouping by describe blocks unless the change
+            fixes a real readability or correctness issue.
+          - For docs/markdown: skip prose-style suggestions ("consider adding a
+            section on…") unless the existing content is wrong or misleading.
+    - path: '**/*.{ts,tsx}'
+      instructions: |
+        - TypeScript codebase on Node.js >=22.13.0. Strict mode is on — flag
+          `any`, non-null assertions (`!`), and unchecked `as` casts where the
+          invariant isn't obvious.
+        - Code is formatted with Prettier and linted with ESLint
+          (`eslint-config-next` + TypeScript rules). A `PostToolUse` hook auto-
+          formats on Write/Edit, so stylistic Prettier-level findings are noise
+          — skip them.
+        - `pre-commit` (husky + lint-staged) runs `prettier --write` and
+          `eslint --fix` on staged files. Don't flag formatting.
+        - Prefer `import type { ... }` for type-only imports.
+        - Validate at boundaries with `zod` schemas (already a dependency) —
+          flag hand-rolled runtime validation that duplicates a schema-able
+          check, but don't suggest schemas for purely internal call sites.
+    - path: 'src/mastra/**/*.ts'
+      instructions: |
+        - Mastra framework code (`@mastra/core` ^1.32). APIs change frequently
+          between versions — verify against the installed version in
+          `node_modules/@mastra/core` before asserting an API signature is
+          wrong. If you can't verify, say so instead of guessing.
+        - Every new agent, tool, workflow, scorer, and MCP server MUST be
+          registered in `src/mastra/index.ts`. Flag any file under
+          `src/mastra/{agents,tools,workflows,scorers,mcp}/` that exports a
+          symbol not wired into `index.ts`.
+        - Tools must declare `inputSchema` and `outputSchema` (zod). Flag tools
+          that omit either schema or that use `z.any()` / `z.unknown()` without
+          a comment explaining why the shape can't be narrowed.
+        - Never hardcode API keys or model-provider credentials — they come
+          from environment variables. Flag any literal that looks like a key
+          (sk-…, pk_…, bearer tokens, etc.).
+        - Don't recommend modifying `node_modules` or the local Mastra
+          database files (`mastra.db*`, `mastra.duckdb*`) — those are runtime
+          state.
+    - path: 'src/mastra/agents/**/*.ts'
+      instructions: |
+        - Agent definitions configure behavior, model, instructions, tools, and
+          memory. When reviewing, check that the model is referenced via the
+          provider SDK (`@ai-sdk/openai` etc.), not via a literal model ID
+          string scattered across files.
+        - Instructions strings are prompts — treat them as code: flag
+          contradictions, ambiguous directives, and instructions that promise
+          behavior the wired tools can't deliver.
+        - Memory configuration (`@mastra/memory`) should match the agent's
+          intended scope. Flag a per-request agent that wires persistent
+          memory, or a long-running agent with no memory when the
+          instructions reference prior turns.
+    - path: 'src/mastra/tools/**/*.ts'
+      instructions: |
+        - Tools are pure capabilities invoked by agents. They must be
+          deterministic given the input schema, or document the non-
+          determinism in the description.
+        - The `description` is what the LLM sees when deciding whether to call
+          the tool — flag descriptions that are vague, redundant with the tool
+          name, or that don't state when NOT to use the tool.
+        - Side-effecting tools (filesystem, network, DB writes) should
+          surface failures via the return value, not via thrown exceptions
+          that abort the agent run — unless the failure is genuinely
+          unrecoverable. Flag `throw` in `execute` without a stated reason.
+    - path: 'src/mastra/workflows/**/*.ts'
+      instructions: |
+        - Workflows orchestrate steps, agents, and tools. Each step's
+          `inputSchema` / `outputSchema` is the contract — flag steps that
+          accept `z.any()` or that produce a shape the next step can't
+          consume without a runtime cast.
+        - Branching and parallel steps should have explicit join semantics.
+          Flag implicit `Promise.all`-style fan-out that loses individual
+          failure context.
+    - path: 'src/app/**/*.{ts,tsx}'
+      instructions: |
+        - Next.js 16 App Router. Server Components are the default — flag
+          unnecessary `"use client"` directives (a file that only renders
+          static markup, never uses state/effects/handlers, doesn't need it).
+        - Route handlers (`route.ts`) must validate request bodies with zod
+          before touching agents or DB. Untrusted input flowing into a Mastra
+          agent invocation is a finding, not a nit.
+        - Server actions and route handlers must not leak environment
+          secrets into client bundles — flag any `process.env.X` access in a
+          `"use client"` file unless `X` starts with `NEXT_PUBLIC_`.
+        - Streaming agent responses use `@mastra/ai-sdk` + `ai` SDK helpers.
+          When reviewing streaming endpoints, check that errors mid-stream
+          are surfaced to the client rather than silently terminating the
+          stream.
+    - path: 'src/components/**/*.{ts,tsx}'
+      instructions: |
+        - React 19 + Tailwind v4 + shadcn/radix-ui components. Reuse existing
+          primitives before authoring new ones — flag hand-rolled
+          buttons/dialogs/inputs that duplicate a shadcn component already
+          present in the tree.
+        - Tailwind classes are sorted by Prettier's Tailwind plugin (if
+          enabled). Don't flag class ordering.
+        - Client components should declare `"use client"` at the top. Flag
+          components that use hooks without the directive.
+    - path: 'src/lib/**/*.ts'
+      instructions: |
+        - Shared utilities consumed by both app routes and Mastra code. Pure
+          functions preferred — flag utilities that reach into `process.env`,
+          the filesystem, or the network without justification (those belong
+          in a Mastra tool or a server-only module).
+    - path: '**/*.test.ts'
+      instructions: |
+        - Vitest tests (`pnpm test` runs `vitest --run`). Coverage uses
+          `@vitest/coverage-v8`.
+        - Don't suggest splitting `it`/`test` cases, renaming, or adding
+          describe groupings unless it fixes a real readability problem.
+        - Mastra agent/workflow tests typically need a real model call OR a
+          mocked provider — flag tests that call live providers without an
+          environment guard, and flag mocks that pretend to be the SDK but
+          drift from the real shape.
+    - path: 'src/mastra/index.ts'
+      instructions: |
+        - Central Mastra registration point. This is the only place agents,
+          tools, workflows, scorers, and MCP servers should be registered.
+          Flag PRs that add a new agent/tool/workflow/scorer file without
+          updating this file.
+    - path: 'tsconfig.json'
+      instructions: |
+        - Strict TypeScript settings expected. Flag loosening of `strict`,
+          `noImplicitAny`, or `strictNullChecks` without a stated reason.
+    - path: 'package.json'
+      instructions: |
+        - pnpm workspace. Check that new dependencies are placed under the
+          correct section (`dependencies` vs `devDependencies`). Flag
+          overly broad version ranges (`*`, `latest`) and pinned-too-tight
+          ranges on `@mastra/*` packages — they release frequently and a
+          hard pin causes drift.
+        - Don't suggest adding scripts for things the existing `dev`,
+          `build`, `lint`, `format`, `test` scripts already cover.
+    - path: '.env.example'
+      instructions: |
+        - Template for environment variables. Every variable read in code via
+          `process.env.X` should have a corresponding entry here with a
+          placeholder value. Flag new `process.env` reads that don't appear
+          in `.env.example`.
+        - Never contains real secrets — flag anything that looks like a real
+          key (not just a placeholder).
+    - path: 'docs/**'
+      instructions: |
+        - Documentation files — focus on clarity, accuracy, and completeness.
+        - Check for broken links and outdated references to file paths,
+          function names, or API signatures that have moved.
+  tools:
+    eslint:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  learnings:
+    scope: 'auto'
