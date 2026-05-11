@@ -13,7 +13,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/lib/vault/**/*.ts'],
+      include: [
+        'src/lib/vault/**/*.ts',
+        'src/lib/schemas.ts',
+        'src/lib/dossier.ts',
+        'src/lib/media/**/*.ts',
+      ],
+      exclude: ['**/*.test.ts'],
       thresholds: {
         lines: 80,
         functions: 80,
