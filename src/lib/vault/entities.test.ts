@@ -93,8 +93,9 @@ describe('entities', () => {
 
     it('does NOT eagerly load npcs or locations', async () => {
       const loaded = await loadAlwaysLoaded(FIXTURE);
-      expect((loaded as Record<string, unknown>).npcs).toBeUndefined();
-      expect((loaded as Record<string, unknown>).locations).toBeUndefined();
+      const bag = loaded as unknown as Record<string, unknown>;
+      expect(bag.npcs).toBeUndefined();
+      expect(bag.locations).toBeUndefined();
     });
   });
 
