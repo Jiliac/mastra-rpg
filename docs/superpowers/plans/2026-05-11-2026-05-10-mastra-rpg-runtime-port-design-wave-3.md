@@ -755,11 +755,21 @@ export interface BuildIllustratorDossierInput {
  * Returns the body of the `## Visual` section in a style-guide markdown,
  * stripped of leading/trailing whitespace. Returns `null` if the section
  * is absent. Mirrors OpenClaw `image.py:_VISUAL_RE` (Python's `\Z` end-of-
- * string anchor is not a valid JS regex token — we use `$` with the `m`
- * flag plus the alternation `(?=^## |$)` so the capture stops at either
- * the next `##` heading or the end of input).
+ * string anchor is not a valid JS regex token — we anchor the trailing
+ * alternative with `$(?![\s\S])`, a negative-lookahead that pins `$` to
+ * true end-of-input. The leading `^## Visual` still uses `m`-mode so the
+ * heading is matched on its own line; `$` alone with the `m` flag would
+ * incorrectly match at every line break, truncating multi-line blocks).
+ *
+ * Verified in Node against the three reviewer-cited test cases:
+ *   "## Visual\nFirst block.\nSecond line.\n## Other\nignored"
+ *     -> "First block.\nSecond line."
+ *   "## Visual\nOnly block.\nMultiple lines."
+ *     -> "Only block.\nMultiple lines."
+ *   "## Visual\nFixture single sentence."
+ *     -> "Fixture single sentence."
  */
-const VISUAL_RE = /^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m;
+const VISUAL_RE = /^## Visual\s*\n([\s\S]*?)(?=\n## |$(?![\s\S]))/m;
 
 export function extractVisualBlock(styleGuide: string): string | null {
   const m = styleGuide.match(VISUAL_RE);
@@ -1006,7 +1016,7 @@ function esc(s: string): string {
 pnpm test --run src/lib/dossier.test.ts
 ```
 
-Expected: all 17 tests PASS. The canonical `VISUAL_RE` (`/^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m`) already handles both the next-heading and the EOF cases — no regex retries should be needed. If `identifyOnStage` returns extra entries due to over-eager alias matching (e.g. "the" matches everywhere), this is intentional: see Risk-register entry #1 — the v0 fixture vault has no aliases short enough to trigger this and we ship without the `a.length >= 3` guard (the negative test is also deliberately omitted; see the risk register).
+Expected: all 17 tests PASS. The canonical `VISUAL_RE` (`/^## Visual\s*\n([\s\S]*?)(?=\n## |$(?![\s\S]))/m`) already handles both the next-heading and the EOF cases — no regex retries should be needed. The `(?![\s\S])` negative-lookahead pins `$` to true end-of-input so it does not match at the first `\n` (which is what `$` does on its own in `m`-mode). If `identifyOnStage` returns extra entries due to over-eager alias matching (e.g. "the" matches everywhere), this is intentional: see Risk-register entry #1 — the v0 fixture vault has no aliases short enough to trigger this and we ship without the `a.length >= 3` guard (the negative test is also deliberately omitted; see the risk register).
 
 - [ ] **Step 5: Commit.**
 
@@ -1929,7 +1939,7 @@ These are documented inline in the task preambles, but consolidated here for the
 
 1. **`identifyOnStage` false positives from short aliases.** A faction with alias `"the"` would match every sentence. v0 fixtures have no aliases shorter than 3 characters, so we ship **without** an `a.length >= 3` guard — and correspondingly **without** a "ignores a short-alias" negative test. This is a deliberate choice in this revision: keeping the guard out of v0 keeps the plan honest about what is and isn't tested. If a future fixture / vault grows a single-letter alias, add the guard AND the matching negative test together (don't ship one without the other).
 
-2. **`extractVisualBlock` regex on EOF-without-newline.** Markdown files that end mid-line (no trailing `\n`) need the regex's tail to cope. We use `(?=\n## |$)` with the `m` flag — `$` (in multiline mode) matches at end-of-input as well as at line ends, which is the JavaScript-equivalent of Python's `\Z` (which is NOT a valid JS regex token — an earlier draft used it and would have thrown `SyntaxError: Invalid escape` at module load). Verified by Task 2's "captures up to EOF" test.
+2. **`extractVisualBlock` regex on EOF-without-newline.** Markdown files that end mid-line (no trailing `\n`) need the regex's tail to cope. We use `(?=\n## |$(?![\s\S]))` with the `m` flag — the negative-lookahead `(?![\s\S])` after `$` pins the anchor to true end-of-input (no characters of any kind may follow), which is the JavaScript equivalent of Python's `\Z` (which is NOT a valid JS regex token — an earlier draft used it and would have thrown `SyntaxError: Invalid escape` at module load). The `(?![\s\S])` clamp is load-bearing: a plain `$` under the `m` flag would also match at every internal line break, causing the lazy `[\s\S]*?` to stop at the first `\n` and truncate multi-line blocks. The leading `^## Visual` anchor still benefits from `m`-mode (so the heading is matched on its own line). Verified in Node against the reviewer-cited tests: "First block.\nSecond line.", "Only block.\nMultiple lines.", and "Fixture single sentence." all return their full bodies under the corrected regex (also verified by Task 2's "captures up to EOF" and "captures up to the next ## heading" tests).
 
 3. **OpenAI `gpt-image-1` request/response shape.** `gpt-image-1` is the canonical published model name (the OpenClaw scripts and an earlier draft of this plan referenced `gpt-image-2`, which is not a real model). `gpt-image-1` REJECTS `response_format` as a request parameter and always returns `b64_json` by default. Task 4 Step 0 calls ctx7 to verify the exact request body and response shape before any code is written. Task 4's live-smoke gate (Step 5) will surface any remaining mismatch as a 400/4xx and force a Step 0 re-run.
 
@@ -1991,7 +2001,7 @@ These were applied while writing the plan; they're listed here so a reviewer (or
    - Revision 1 widens this to a single `vitest.config.ts` edit (Task 5 Step 1) — that file is in repo-root, not under `src/`, and the change is config-only.
 
 8. **Regex correctness — JS regex tokens only, no Python `\Z`:**
-   - `VISUAL_RE` in `dossier.ts` Step 3 is `/^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m` — uses `$` with the `m` flag instead of the Python-only `\Z`. Manually load-tested in a Node REPL: `new RegExp('^## Visual\\s*\\n([\\s\\S]*?)(?=\\n## |$)', 'm')` does not throw.
+   - `VISUAL_RE` in `dossier.ts` Step 3 is `/^## Visual\s*\n([\s\S]*?)(?=\n## |$(?![\s\S]))/m` — uses `$(?![\s\S])` as the JS-equivalent of Python's `\Z` (true end-of-input), with `m` mode only for the leading `^## Visual` heading anchor. Verified in Node against three cases: `"## Visual\nFirst block.\nSecond line.\n## Other\nignored"` → `"First block.\nSecond line."`; `"## Visual\nOnly block.\nMultiple lines."` → `"Only block.\nMultiple lines."`; `"## Visual\nFixture single sentence."` → `"Fixture single sentence."`. An earlier revision used a plain `$` here, which incorrectly matched at every internal `\n` and truncated multi-line blocks at the first line break — that regression is fixed by the negative-lookahead.
    - No other regex in the plan uses non-JS escapes.
 
 9. **External-API model names verified at implementation time:**
