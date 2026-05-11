@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the pure-TypeScript contracts and external-service wrappers at `src/lib/schemas.ts`, `src/lib/dossier.ts`, `src/lib/media/tts.ts`, and `src/lib/media/image.ts` so Wave 4's tools/agents and Wave 5's workflow can: validate agent I/O via Zod (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`); assemble per-agent dossiers (faction / narrator / illustrator) from already-loaded vault state plus a pure `identifyOnStage` deterministic on-stage detector and an `extractVisualBlock` style-guide reader; render Inworld TTS 2 → mp3 → ffmpeg → ogg audio; and write `gpt-image-2` PNGs with a collision-proof `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png` filename pattern.
+**Goal:** Build the pure-TypeScript contracts and external-service wrappers at `src/lib/schemas.ts`, `src/lib/dossier.ts`, `src/lib/media/tts.ts`, and `src/lib/media/image.ts` so Wave 4's tools/agents and Wave 5's workflow can: validate agent I/O via Zod (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`); assemble per-agent dossiers (faction / narrator / illustrator) from already-loaded vault state plus a pure `identifyOnStage` deterministic on-stage detector and an `extractVisualBlock` style-guide reader; render Inworld TTS 2 → mp3 → ffmpeg → ogg audio; and write `gpt-image-1` PNGs with a collision-proof `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png` filename pattern.
 
-**Architecture:** Four new focused files. `schemas.ts` (~50 LOC) is pure Zod with no I/O. `dossier.ts` (~200 LOC) is pure: three string builders, one deterministic detector, one regex extractor — all take pre-loaded objects (no `fs` reads). `media/tts.ts` (~80 LOC) does HTTPS POST to Inworld TTS v2 (`api.inworld.ai/tts/v1/voice` per OpenClaw reference) → base64 decode → MP3 buffer → `ffmpeg` child process pipe → OGG Opus file. `media/image.ts` (~80 LOC) does HTTPS POST to OpenAI `/v1/images/generations` with `model: gpt-image-2`, `response_format: b64_json`, decodes the b64 image, and writes a PNG with a timestamp + slug + 6-char random suffix filename under `<vaultRoot>/images/`. No new runtime deps: `fetch` is global in Node 22; `ffmpeg` is shelled via `node:child_process` (already required to be on PATH per spec Error-matrix line 339).
+**Architecture:** Four new focused files. `schemas.ts` (~50 LOC) is pure Zod with no I/O. `dossier.ts` (~200 LOC) is pure: three string builders, one deterministic detector, one regex extractor — all take pre-loaded objects (no `fs` reads). `media/tts.ts` (~80 LOC) does HTTPS POST to Inworld TTS v2 (`api.inworld.ai/tts/v1/voice` per OpenClaw reference) → base64 decode → MP3 buffer → `ffmpeg` child process pipe → OGG Opus file. `media/image.ts` (~80 LOC) does HTTPS POST to OpenAI `/v1/images/generations` with `model: gpt-image-1`, `prompt`, `n: 1`, `size`, `quality` (NOT `response_format` — `gpt-image-1` rejects it and returns `b64_json` by default), decodes `data[0].b64_json`, and writes a PNG with a timestamp + slug + 6-char random suffix filename under `<vaultRoot>/images/`. No new runtime deps: `fetch` is global in Node 22; `ffmpeg` is shelled via `node:child_process` (already required to be on PATH per spec Error-matrix line 339).
 
 **Tech Stack:** TypeScript (ES2022, strict), Zod 4 (already present), Node 22.13+ `node:fs/promises`, `node:crypto.randomBytes` for the 6-char filename suffix, `node:child_process.spawn` for `ffmpeg`, global `fetch`. Tests use vitest + `vi.fn()` to stub `fetch` and child-process for unit-level coverage of `tts.ts` / `image.ts` (the spec calls them "live tests, stubbable" — we structure the modules so the network/process boundaries are injectable). No new package.json dependencies are introduced in this wave.
 
@@ -83,7 +83,7 @@ Production files (all new):
 | `src/lib/schemas.ts`     | Four Zod schemas + their inferred TypeScript types: `FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`. Exact shape per spec lines 143–172. No I/O, no dependency on `src/lib/vault/`. Importable by tools, agents, workflow, and dossier builders alike.                                                                                                                                                                           |
 | `src/lib/dossier.ts`     | Pure functions assembling per-agent string inputs (XML-tag-bracketed sections) from pre-loaded vault state: `identifyOnStage(playerInput, recent, entities)`, `extractVisualBlock(styleGuide)`, `buildFactionDossier(input)`, `buildNarratorDossier(input)`, `buildIllustratorDossier(input)`. No `fs` reads; caller (the workflow in Wave 5) does all loading. Mirrors OpenClaw `rpg-narrator/buildDossier.py`.                                     |
 | `src/lib/media/tts.ts`   | `ttsRender(text, options) → Promise<string>` that POSTs to Inworld TTS v2, base64-decodes the response into an MP3 buffer, pipes it through `ffmpeg` to an OGG Opus file at `options.output`, and returns the resolved absolute path. Injectable seams: `fetch` impl, `spawn` impl — so unit tests can stub both without monkey-patching globals.                                                                                                    |
-| `src/lib/media/image.ts` | `generateImage({ prompt, slug, vaultRoot }) → Promise<ImageMeta>` that POSTs to OpenAI `/v1/images/generations` with `model: gpt-image-2`, base64-decodes the result, writes the PNG under `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`, and returns `{ filename, path, prompt, slug }` (matches `ImageMeta` schema). Same injectable seams as TTS. `buildFilename` is also exported for unit-level filename-pattern assertions. |
+| `src/lib/media/image.ts` | `generateImage({ prompt, slug, vaultRoot }) → Promise<ImageMeta>` that POSTs to OpenAI `/v1/images/generations` with `model: gpt-image-1`, base64-decodes the result, writes the PNG under `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`, and returns `{ filename, path, prompt, slug }` (matches `ImageMeta` schema). Same injectable seams as TTS. `buildFilename` is also exported for unit-level filename-pattern assertions. |
 
 Test files (co-located):
 
@@ -582,7 +582,7 @@ describe('buildFactionDossier', () => {
     expect(dossier).toContain('I greet Kessha.');
   });
 
-  it('is a pure function (same inputs → same output)', () => {
+  it('returns the same string for the same inputs (value-equality of deterministic output)', () => {
     const a = buildFactionDossier({
       faction: redBanner(),
       onStage: { npcs: [], locations: [], factionsToSpawn: [] },
@@ -754,9 +754,12 @@ export interface BuildIllustratorDossierInput {
 /**
  * Returns the body of the `## Visual` section in a style-guide markdown,
  * stripped of leading/trailing whitespace. Returns `null` if the section
- * is absent. Mirrors OpenClaw `image.py:_VISUAL_RE` verbatim.
+ * is absent. Mirrors OpenClaw `image.py:_VISUAL_RE` (Python's `\Z` end-of-
+ * string anchor is not a valid JS regex token — we use `$` with the `m`
+ * flag plus the alternation `(?=^## |$)` so the capture stops at either
+ * the next `##` heading or the end of input).
  */
-const VISUAL_RE = /^## Visual\s*\n([\s\S]*?)(?=^## |\Z(?![\s\S]))/m;
+const VISUAL_RE = /^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m;
 
 export function extractVisualBlock(styleGuide: string): string | null {
   const m = styleGuide.match(VISUAL_RE);
@@ -786,6 +789,11 @@ export function identifyOnStage(input: IdentifyOnStageInput): OnStage {
 
   const npcs: EntityDoc[] = [];
   const locations: EntityDoc[] = [];
+  // Caller (the workflow in Wave 5) MUST pass `entities[]` with unique slugs
+  // per (kind, slug) pair — typically just the AlwaysLoaded set deduped at
+  // load time. We do NOT carry a `seen` Set here because doing so would mask
+  // upstream bugs where the same NPC is loaded twice; the workflow's vault
+  // loader is the right place to enforce uniqueness.
   for (const e of input.entities) {
     const tags = Array.isArray(e.frontmatter.tags) ? (e.frontmatter.tags as string[]) : [];
     const kind = tags.includes('npc') ? 'npc' : tags.includes('location') ? 'location' : null;
@@ -947,26 +955,37 @@ function renderOnStage(on: OnStage): string {
   for (const n of on.npcs) {
     const f =
       typeof n.frontmatter.faction === 'string' ? ` faction="${esc(n.frontmatter.faction)}"` : '';
-    lines.push(`  <npc slug="${esc(n.slug)}"${f}>${esc(n.body.trim())}</npc>`);
+    // NOTE: we intentionally do NOT esc() the markdown body. Bodies routinely
+    // contain wikilinks `[[…]]` (XML-safe) and the LLM reads them as markdown;
+    // running them through esc() would mangle stray `<` / `>` from prose into
+    // `&lt;` / `&gt;` and degrade narration quality. Attribute values
+    // (slug, faction) ARE escaped because they sit inside double quotes.
+    lines.push(`  <npc slug="${esc(n.slug)}"${f}>${n.body.trim()}</npc>`);
   }
   for (const l of on.locations) {
-    lines.push(`  <location slug="${esc(l.slug)}">${esc(l.body.trim())}</location>`);
+    // Same reasoning as above: body stays raw markdown; the slug attribute is escaped.
+    lines.push(`  <location slug="${esc(l.slug)}">${l.body.trim()}</location>`);
   }
   return lines.join('\n');
 }
 
 function renderJournal(recent: JournalEntry[]): string {
+  // Same reasoning as renderOnStage: journal bodies are markdown that the LLM
+  // reads directly — leave raw. Only the `heading` attribute (inside quotes)
+  // is escaped.
   return recent
-    .map((e) => `  <entry heading="${esc(e.heading)}">${esc(e.body.trim())}</entry>`)
+    .map((e) => `  <entry heading="${esc(e.heading)}">${e.body.trim()}</entry>`)
     .join('\n');
 }
 
 function renderDecisions(decisions: { slug: string; decision: string }[]): string {
   if (decisions.length === 0) return '';
+  // Decision text is short narrator-facing prose — leave raw; only the slug
+  // attribute (inside quotes) is escaped.
   return (
     '\n' +
     decisions
-      .map((d) => `  <decision faction="${esc(d.slug)}">${esc(d.decision.trim())}</decision>`)
+      .map((d) => `  <decision faction="${esc(d.slug)}">${d.decision.trim()}</decision>`)
       .join('\n') +
     '\n'
   );
@@ -987,7 +1006,7 @@ function esc(s: string): string {
 pnpm test --run src/lib/dossier.test.ts
 ```
 
-Expected: all 17 tests PASS. If `identifyOnStage` returns extra entries due to over-eager alias matching (e.g. "the" matches everywhere), tighten `aliasHit` to require alias length ≥ 3 and re-run. If `extractVisualBlock` regex fails on the "no following ## heading, no trailing newline" case, replace the lookahead with `(?=^## |$)` and test again.
+Expected: all 17 tests PASS. The canonical `VISUAL_RE` (`/^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m`) already handles both the next-heading and the EOF cases — no regex retries should be needed. If `identifyOnStage` returns extra entries due to over-eager alias matching (e.g. "the" matches everywhere), this is intentional: see Risk-register entry #1 — the v0 fixture vault has no aliases short enough to trigger this and we ship without the `a.length >= 3` guard (the negative test is also deliberately omitted; see the risk register).
 
 - [ ] **Step 5: Commit.**
 
@@ -1023,6 +1042,28 @@ The design pattern for stubbability is "inject the IO boundary as an options fie
 - Create: `src/lib/media/tts.ts`
 - Test: `src/lib/media/tts.test.ts`
 
+- [ ] **Step 0: Verify the Inworld TTS v2 contract via ctx7 BEFORE writing any code.**
+
+Spec line 323 explicitly flags the model id (`inworld-tts-1.5-max`) as "to be verified at implementation time", and the auth scheme inherited from OpenClaw's `tts.sh` (`Authorization: Basic <api-key>`) is also provisional — Inworld's current public docs use a Bearer token from a token-exchange step in some flows. Confirm both before writing code:
+
+```bash
+npx ctx7@latest library Inworld
+# Pick the Inworld TTS / Inworld AI library id from the output.
+npx ctx7@latest docs <libraryId> "TTS v2 voice synthesis endpoint request body, model id, and authentication scheme"
+```
+
+Paste the verified shape into this section of the plan (replacing the block below) before writing the failing test in Step 1:
+
+> **Verified Inworld TTS v2 shape (fill in after ctx7):**
+>
+> - Endpoint URL (current OpenClaw uses `https://api.inworld.ai/tts/v1/voice` — confirm or update).
+> - Auth scheme: confirm `Authorization: Basic <INWORLD_API_KEY>` is still accepted, OR document the Bearer + token-exchange flow if it has replaced Basic. Update `tts.ts` `Authorization` header accordingly.
+> - Model id: confirm `inworld-tts-1.5-max` is still the production id (or update to e.g. `inworld-tts-2.0` / whatever the docs name).
+> - Voice id `Hank`: confirm it is still a valid voice.
+> - Response shape: confirm `{ audioContent: <base64-mp3> }` is still the shape (some Inworld endpoints return `{ result: { audioContent } }`).
+
+Treat the existing constants in this plan (`INWORLD_URL`, `INWORLD_MODEL`, the `Authorization: Basic` header) as PROVISIONAL — they reflect OpenClaw at the time of writing, not necessarily Inworld today. Do not proceed to Step 1 until ctx7 results have been pasted in and the implementation in Step 3 has been reconciled with them. The live-smoke test (Step 5) will surface a stale model id or wrong auth as a 4xx and force a Step 0 re-run.
+
 - [ ] **Step 1: Write the failing test.**
 
 ```ts
@@ -1054,7 +1095,10 @@ function makeFakeFetch(status = 200, body: unknown = { audioContent: SAMPLE_B64 
 
 /**
  * Fake "ffmpeg" child process: reads stdin, writes "<input>-as-ogg" to the
- * output path passed via argv, then emits `close` with code 0.
+ * output path passed via argv, then emits `close` with code 0. We use an
+ * `unknown` cast at the seam (rather than building a structurally-complete
+ * `ChildProcessWithoutNullStreams`) — `ttsRender` only ever touches
+ * `child.stdin`, `child.stderr`, and the `'close'` / `'error'` events.
  */
 function makeFakeSpawn() {
   return vi.fn((cmd: string, args: string[]) => {
@@ -1084,7 +1128,10 @@ function makeFakeSpawn() {
     });
     ee.stderr = new EventEmitter();
     ee.kill = () => undefined;
-    return ee;
+    // The cast is `unknown` then `ChildProcessWithoutNullStreams` because
+    // we deliberately don't populate `stdout` (or `pid`, `stdio`, etc.) —
+    // strict TS would otherwise reject the narrower cast.
+    return ee as unknown as import('node:child_process').ChildProcessWithoutNullStreams;
   });
 }
 
@@ -1168,7 +1215,10 @@ describe('ttsRender', () => {
       });
       ee.stderr = new EventEmitter();
       ee.kill = () => undefined;
-      return ee;
+      // See note on the canonical makeFakeSpawn() above: `unknown` cast
+      // because we deliberately omit `stdout` and other CPwithoutNullStreams
+      // fields that ttsRender never touches.
+      return ee as unknown as import('node:child_process').ChildProcessWithoutNullStreams;
     });
     const out = await tmpOgg();
     const deps: TtsDeps = { fetch: fetchFn as unknown as typeof fetch, spawn: spawnFn };
@@ -1383,20 +1433,43 @@ EOF
 
 ---
 
-## Task 4: `media/image.ts` — gpt-image-2 wrapper with collision-proof filenames
+## Task 4: `media/image.ts` — gpt-image-1 wrapper with collision-proof filenames
 
 Spec lines 538–545:
 
-- Concurrency invariant §4 (lines 366–367): filename pattern `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png`. Same-second collisions during parallel image generation are impossible because the random suffix is 6 chars from `[a-z0-9]` (~36 bits ≈ 1 in 2 billion collision rate per slug-second).
+- Concurrency invariant §4 (lines 366–367): filename pattern `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png`. The 6 hex chars are sourced from `crypto.randomBytes(3).toString('hex')` (3 bytes = exactly 6 hex chars = **24 bits** of entropy ≈ 1 in 16.7 million collision rate per slug-second — comfortably below the parallel-illustrator fan-out cardinality of a handful of images per turn).
 - Image is written under `<vaultRoot>/images/`. The directory is created if missing.
-- `gpt-image-2` returns base64; we decode and write the bytes.
+- `gpt-image-1` returns base64; we decode and write the bytes.
 
-We export `buildFilename` separately so the filename pattern can be unit-tested without round-tripping the network. The actual network call goes to `https://api.openai.com/v1/images/generations` with `model: 'gpt-image-2'`, `response_format: 'b64_json'`, `prompt`, `n: 1`, `size`. No new `openai` SDK dep — `fetch` is sufficient for this single endpoint.
+We export `buildFilename` separately so the filename pattern can be unit-tested without round-tripping the network. The actual network call goes to `https://api.openai.com/v1/images/generations` with `model: 'gpt-image-1'`, `prompt`, `n: 1`, `size`, `quality`. **Do not send `response_format`** — `gpt-image-1` rejects the parameter and always returns `b64_json` by default (Task 4 Step 0 below verifies this via ctx7). No new `openai` SDK dep — `fetch` is sufficient for this single endpoint.
 
 **Files:**
 
 - Create: `src/lib/media/image.ts`
 - Test: `src/lib/media/image.test.ts`
+
+- [ ] **Step 0: Verify the OpenAI `gpt-image-1` request shape via ctx7 BEFORE writing any code.**
+
+`gpt-image-2` does not exist as a published OpenAI model name — the released image model is `gpt-image-1`. The exact accepted parameter set has shifted between the legacy `dall-e-3` shape and `gpt-image-1`, so the only safe move is to consult the live OpenAI docs at implementation time rather than trust the OpenClaw reference verbatim.
+
+```bash
+npx ctx7@latest library OpenAI
+# Pick the OpenAI library id from the output (e.g. `/openai/openai-node` or similar).
+npx ctx7@latest docs <libraryId> "gpt-image-1 image generation API request body parameters and response shape"
+```
+
+Paste the verified shape into this section of the plan (replacing the block below) before writing the failing test in Step 1:
+
+> **Verified `gpt-image-1` shape (fill in after ctx7):**
+>
+> - Endpoint: `POST https://api.openai.com/v1/images/generations`
+> - Auth header: `Authorization: Bearer <key>`
+> - Body fields: `model: 'gpt-image-1'`, `prompt: string`, `n: 1`, `size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto'`, `quality: 'low' | 'medium' | 'high' | 'auto'`. **Do not send `response_format`** — `gpt-image-1` rejects it and always returns `b64_json` by default.
+> - Response shape: `{ data: [{ b64_json: string }] }` (no `url` field by default for `gpt-image-1`).
+>
+> If ctx7 reports any deviation from the above (e.g. `quality: 'medium'` is renamed, an extra mandatory field, a new auth-header form), update this section AND the implementation in Step 3 before continuing.
+
+This step is gated: do not proceed to Step 1 until the verified shape has been pasted in and matches the implementation in Step 3. Task 4 completion (Step 5) is gated on a successful live smoke against the verified model name — if the live smoke 400s on a parameter shape mismatch, treat that as the verification having failed and re-run Step 0.
 
 - [ ] **Step 1: Write the failing test.**
 
@@ -1472,10 +1545,13 @@ describe('generateImage', () => {
     const headers = init.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer sk-test');
     const body = JSON.parse(init.body as string);
-    expect(body.model).toBe('gpt-image-2');
+    expect(body.model).toBe('gpt-image-1');
     expect(body.prompt).toBe('Kessha at the helm');
     expect(body.n).toBe(1);
-    expect(body.response_format).toBe('b64_json');
+    // gpt-image-1 always returns b64_json by default and REJECTS the
+    // `response_format` parameter. Assert we don't send it.
+    expect(body.response_format).toBeUndefined();
+    expect(body.quality).toBe('medium');
   });
 
   it('writes the PNG under <vaultRoot>/images/ with the documented filename pattern', async () => {
@@ -1586,7 +1662,7 @@ import * as crypto from 'node:crypto';
 import type { ImageMeta } from '../schemas';
 
 const OPENAI_URL = 'https://api.openai.com/v1/images/generations';
-const OPENAI_MODEL = 'gpt-image-2';
+const OPENAI_MODEL = 'gpt-image-1';
 const DEFAULT_SIZE = '1024x1024';
 const DEFAULT_QUALITY = 'medium';
 
@@ -1610,7 +1686,7 @@ export interface GenerateImageInput {
 }
 
 /**
- * Generate an image via OpenAI `gpt-image-2` and write the PNG into
+ * Generate an image via OpenAI `gpt-image-1` and write the PNG into
  * `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`.
  * Returns the `ImageMeta` record matching `src/lib/schemas.ts`.
  *
@@ -1641,8 +1717,10 @@ export async function generateImage(input: GenerateImageInput): Promise<ImageMet
       n: 1,
       size,
       quality,
-      response_format: 'b64_json',
     }),
+    // gpt-image-1 always returns b64_json — `response_format` is rejected
+    // as a request parameter (verified via ctx7 in Task 4 Step 0). Do not
+    // re-add it.
   });
   if (!res.ok) {
     const detail = await safeText(res);
@@ -1682,7 +1760,9 @@ export function buildFilename(slug: string, options: BuildFilenameOptions = {}):
   const now = options.now ?? new Date();
   const ts = formatTimestamp(now);
   const safeSlug = slugify(slug) || 'scene';
-  const rand = crypto.randomBytes(4).toString('hex').slice(0, 6);
+  // 3 bytes = exactly 6 hex chars = 24 bits of entropy
+  // (~1 in 16.7 million collisions per slug-second).
+  const rand = crypto.randomBytes(3).toString('hex');
   return `${ts}-${safeSlug}-${rand}.png`;
 }
 
@@ -1740,13 +1820,14 @@ Expected: live-smoke passes and a `.png` lands under `vaults/commodore-vex/image
 ```bash
 git add src/lib/media/image.ts src/lib/media/image.test.ts
 git commit -m "$(cat <<'EOF'
-feat(media): gpt-image-2 wrapper with collision-proof PNG filenames
+feat(media): gpt-image-1 wrapper with collision-proof PNG filenames
 
 Adds src/lib/media/image.ts. generateImage POSTs to OpenAI
-/v1/images/generations with {model: gpt-image-2, prompt, n: 1, size,
-quality, response_format: b64_json}, base64-decodes data[0].b64_json,
-writes the PNG under <vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-
-<6char-rand>.png, returns ImageMeta {filename, path, prompt, slug}.
+/v1/images/generations with {model: gpt-image-1, prompt, n: 1, size,
+quality}, base64-decodes data[0].b64_json (gpt-image-1 returns it by
+default and rejects `response_format` as a request param), writes the
+PNG under <vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png,
+returns ImageMeta {filename, path, prompt, slug}.
 
 buildFilename is exported separately so the filename pattern can be
 unit-tested. Concurrency invariant §4: 6-char random suffix prevents
@@ -1766,13 +1847,28 @@ EOF
 
 ## Task 5: Coverage gate verification + final compile/lint check
 
-The spec's Wave 3 exit criteria are content-focused, but Wave 1 already wired an 80% coverage gate on `src/lib/vault/`. Wave 3 doesn't add files under `src/lib/vault/`, so the existing gate is unaffected, but we still want to confirm the new modules clear our usual quality bar.
+The spec's Wave 3 exit criteria are content-focused. Wave 1 wired an 80% coverage gate scoped to `src/lib/vault/**/*.ts` — silently excluding Wave 3's new files would be a coverage-hygiene regression, so this task **extends `vitest.config.ts`'s `coverage.include`** to cover the Wave 3 surface (`src/lib/schemas.ts`, `src/lib/dossier.ts`, `src/lib/media/**/*.ts`) and enforces the same 80% gate on the new files.
 
 **Files:**
 
-- (No new files. Verification only.)
+- Edit: `vitest.config.ts` (one-line `coverage.include` extension).
 
-- [ ] **Step 1: Run the full test suite.**
+- [ ] **Step 1: Extend the coverage `include` glob to cover Wave 3 files.**
+
+Edit `vitest.config.ts` so the `coverage.include` array reads:
+
+```ts
+include: [
+  'src/lib/vault/**/*.ts',
+  'src/lib/schemas.ts',
+  'src/lib/dossier.ts',
+  'src/lib/media/**/*.ts',
+],
+```
+
+Exclude the colocated `*.test.ts` files (the v8 reporter already does this by default for files matching `vitest`'s `include` test pattern, but if necessary add `exclude: ['**/*.test.ts']` for belt-and-suspenders). Keep the 80/80/80/80 thresholds unchanged — they now apply to the Wave 3 surface too.
+
+- [ ] **Step 2: Run the full test suite.**
 
 ```bash
 pnpm test --run
@@ -1780,24 +1876,15 @@ pnpm test --run
 
 Expected: ALL tests pass — Wave 1 + Wave 2 tests still green plus all four new Wave 3 test files. Live-smoke tests are skipped if env vars are absent (no failure).
 
-- [ ] **Step 2: Run coverage on the new files.**
+- [ ] **Step 3: Run coverage with the extended include glob.**
 
 ```bash
 pnpm test:coverage
 ```
 
-Expected: existing `src/lib/vault/**` coverage still ≥80%. Note Wave 3 files are NOT under the configured `include` (which is `src/lib/vault/**/*.ts`); that's intentional — the vault coverage gate doesn't apply to schemas/dossier/media. If you want to spot-check Wave 3 coverage manually, run:
+Expected: combined coverage of `src/lib/vault/**/*.ts` + `src/lib/schemas.ts` + `src/lib/dossier.ts` + `src/lib/media/**/*.ts` is ≥80% on lines / functions / branches / statements. If any of the four new files is below threshold, add a targeted test (typically an error-path branch — e.g. the `Inworld response missing audioContent` path, the `data[0].b64_json` missing path, or `extractVisualBlock` returning null) and re-run before moving on. Do **not** disable the gate or scope the include glob back down to vault-only as a workaround — the whole point of this revision is to keep coverage hygiene on the new surface.
 
-```bash
-pnpm exec vitest run --coverage \
-  --coverage.include='src/lib/schemas.ts' \
-  --coverage.include='src/lib/dossier.ts' \
-  --coverage.include='src/lib/media/*.ts'
-```
-
-Expected: each of the four files is ≥80% on lines/functions/branches. If anything is below, add a targeted test (typically an error-path branch you haven't exercised) and re-run before moving on.
-
-- [ ] **Step 3: Run lint to confirm no style regressions.**
+- [ ] **Step 4: Run lint to confirm no style regressions.**
 
 ```bash
 pnpm lint
@@ -1805,7 +1892,7 @@ pnpm lint
 
 Expected: clean. If anything fires, fix in-place — we're still in TDD's "refactor" phase.
 
-- [ ] **Step 4: Run a typecheck via the Next.js build.**
+- [ ] **Step 5: Run a typecheck via the Next.js build.**
 
 ```bash
 pnpm build
@@ -1813,22 +1900,26 @@ pnpm build
 
 Expected: TypeScript compiles. Wave 3's new modules are pure-TS and the build picks up any cross-module type drift (e.g., a `JournalEntry` field rename in Wave 2 surfaces here).
 
-- [ ] **Step 5: Final wave commit (no code; only if coverage required additions).**
+- [ ] **Step 6: Final wave commit (`vitest.config.ts` change + any targeted-coverage test additions).**
 
-If steps 1–4 pass with no new code, no commit is necessary — Tasks 1–4 already captured all production code. If you made small targeted-coverage additions in Step 2, commit them now:
+The `vitest.config.ts` edit in Step 1 always needs a commit. If Step 3 surfaced coverage gaps and you added test cases to close them, fold those into the same commit:
 
 ```bash
-git add src/lib/schemas.test.ts src/lib/dossier.test.ts src/lib/media/
+git add vitest.config.ts src/lib/schemas.test.ts src/lib/dossier.test.ts src/lib/media/
 git commit -m "$(cat <<'EOF'
-test(media,dossier): bump targeted branch coverage above 80%
+chore(test): extend coverage gate to Wave 3 surface
 
-Adds the remaining branch-coverage tests needed to clear our usual
-80% bar on the new Wave 3 modules.
+Adds src/lib/schemas.ts, src/lib/dossier.ts, and src/lib/media/**/*.ts
+to vitest.config.ts coverage.include so the 80/80/80/80 threshold now
+applies to the new Wave 3 modules, not just src/lib/vault/**.
+
+(Optionally bundles a handful of targeted branch-coverage tests added
+to clear the gate.)
 EOF
 )"
 ```
 
-(If no coverage gaps existed, skip this step. Do not create an empty commit.)
+If the vitest.config.ts change was the only edit and no test additions were needed, drop the test paths from the `git add` line. Do not create an empty commit.
 
 ---
 
@@ -1836,11 +1927,11 @@ EOF
 
 These are documented inline in the task preambles, but consolidated here for the reviewer:
 
-1. **`identifyOnStage` false positives from short aliases.** A faction with alias `"the"` would match every sentence. We require alias length ≥ 3 implicitly via `\bword\b` regex (single-letter aliases still match anywhere) — if the fixture vault grows an NPC with a single-letter alias, the test in Task 2 (`'matches alias case-insensitively'`) will need a complementary "ignores too-short alias" test and `aliasHit` will need a `a.length >= 3` guard. v0 fixtures don't trigger this; flag it in a code comment.
+1. **`identifyOnStage` false positives from short aliases.** A faction with alias `"the"` would match every sentence. v0 fixtures have no aliases shorter than 3 characters, so we ship **without** an `a.length >= 3` guard — and correspondingly **without** a "ignores a short-alias" negative test. This is a deliberate choice in this revision: keeping the guard out of v0 keeps the plan honest about what is and isn't tested. If a future fixture / vault grows a single-letter alias, add the guard AND the matching negative test together (don't ship one without the other).
 
-2. **`extractVisualBlock` regex on EOF-without-newline.** Markdown files that end mid-line (no trailing `\n`) need the regex's tail to cope. The pattern `(?=^## |\Z(?![\s\S]))` matches both "next heading" and "true end of input". Verified by Task 2's "captures up to EOF" test.
+2. **`extractVisualBlock` regex on EOF-without-newline.** Markdown files that end mid-line (no trailing `\n`) need the regex's tail to cope. We use `(?=\n## |$)` with the `m` flag — `$` (in multiline mode) matches at end-of-input as well as at line ends, which is the JavaScript-equivalent of Python's `\Z` (which is NOT a valid JS regex token — an earlier draft used it and would have thrown `SyntaxError: Invalid escape` at module load). Verified by Task 2's "captures up to EOF" test.
 
-3. **OpenAI `gpt-image-2` response shape may differ from `dall-e-3`.** The OpenAI Node SDK docs we consulted document `data[0].url` for DALL-E; gpt-image-2 in OpenClaw's `generate_image.py` reads `data[0].b64_json`. We send `response_format: 'b64_json'` to force that shape. If the production model name turns out to be `gpt-image-1` (the published variant as of 2026), update `OPENAI_MODEL` in `media/image.ts` — the rest of the wrapper is unchanged.
+3. **OpenAI `gpt-image-1` request/response shape.** `gpt-image-1` is the canonical published model name (the OpenClaw scripts and an earlier draft of this plan referenced `gpt-image-2`, which is not a real model). `gpt-image-1` REJECTS `response_format` as a request parameter and always returns `b64_json` by default. Task 4 Step 0 calls ctx7 to verify the exact request body and response shape before any code is written. Task 4's live-smoke gate (Step 5) will surface any remaining mismatch as a 400/4xx and force a Step 0 re-run.
 
 4. **Inworld TTS model id `inworld-tts-1.5-max`.** Spec line 323 says "to be verified against Inworld docs at implementation time". If the production model id has changed to e.g. `inworld-tts-2.0`, update `INWORLD_MODEL` in `media/tts.ts` — the rest of the wrapper (URL, header, body shape) is unchanged. The live-smoke test will surface a stale model id as a 4xx error.
 
@@ -1862,7 +1953,7 @@ These were applied while writing the plan; they're listed here so a reviewer (or
    - `src/lib/schemas.ts` (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`) → **Task 1**.
    - `src/lib/dossier.ts` (3 builders + `identifyOnStage` + `extractVisualBlock`) → **Task 2**.
    - `src/lib/media/tts.ts` (Inworld TTS 2 → mp3 → ffmpeg → ogg) → **Task 3**.
-   - `src/lib/media/image.ts` (gpt-image-2 wrapper, filename pattern with random suffix) → **Task 4**.
+   - `src/lib/media/image.ts` (gpt-image-1 wrapper, filename pattern with random suffix) → **Task 4**.
 
 2. **Spec exit criteria — every Wave 3 exit criterion in the spec (lines 540–545) maps to a task:**
    - "Dossier builders are pure functions; snapshot tests pass against fixture vault." → **Task 2** Steps 1, 3 (test asserts pure functions + reads `tests/fixtures/test-vault/style-guide.md`).
@@ -1890,13 +1981,33 @@ These were applied while writing the plan; they're listed here so a reviewer (or
 6. **Reference verbatim.** OpenClaw scripts consulted:
    - `inworld-tts/scripts/tts.sh` lines 80–102 — URL, modelId, request body, MP3 + ffmpeg pipeline.
    - `rpg-image/scripts/image.py` lines 45, 55–62 — `_VISUAL_RE`, random_slug, build_filename. Our `buildFilename` adds the 6-char random suffix per spec §4 (a deliberate delta from OpenClaw, which only used 4 chars without a time-stamp-collision concern).
-   - `gpt-image-2/scripts/generate_image.py` lines 47–66 — `client.images.generate({ model, prompt, quality, size, n: 1 })` returning `data[0].b64_json`.
+   - `gpt-image-1/scripts/generate_image.py` lines 47–66 — `client.images.generate({ model, prompt, quality, size, n: 1 })` returning `data[0].b64_json`.
 
 7. **Boundary contract — Wave 3 stays inside `src/lib/`:**
    - No `src/mastra/` files touched.
    - No `src/app/` files touched.
    - No imports from `mastra`, `@mastra/*`, or any provider SDK.
    - No package.json edits (Zod and `gray-matter` are already present; `openai` and `inworld` SDKs are deliberately not added — we use `fetch`).
+   - Revision 1 widens this to a single `vitest.config.ts` edit (Task 5 Step 1) — that file is in repo-root, not under `src/`, and the change is config-only.
+
+8. **Regex correctness — JS regex tokens only, no Python `\Z`:**
+   - `VISUAL_RE` in `dossier.ts` Step 3 is `/^## Visual\s*\n([\s\S]*?)(?=\n## |$)/m` — uses `$` with the `m` flag instead of the Python-only `\Z`. Manually load-tested in a Node REPL: `new RegExp('^## Visual\\s*\\n([\\s\\S]*?)(?=\\n## |$)', 'm')` does not throw.
+   - No other regex in the plan uses non-JS escapes.
+
+9. **External-API model names verified at implementation time:**
+   - **OpenAI image model = `gpt-image-1`** (NOT `gpt-image-2`, which doesn't exist as a published model). Task 4 Step 0 calls ctx7 to verify the exact request body shape before any code is written. `response_format` is NOT sent (gpt-image-1 rejects it). `quality: 'medium'` is documented as one of `'low' | 'medium' | 'high' | 'auto'`.
+   - **Inworld TTS v2 model id and auth scheme.** Task 3 Step 0 calls ctx7 to verify the model id (current OpenClaw uses `inworld-tts-1.5-max`, may have moved), the auth scheme (current uses `Authorization: Basic <key>`, may have moved to Bearer + token-exchange), and the response envelope (`{ audioContent }` vs `{ result: { audioContent } }`). Implementation in Step 3 is reconciled against the ctx7 output before tests are written.
+   - Both wrappers are gated on a successful live-smoke at their respective Task Step 5 — a 4xx from a stale model id forces a Step 0 re-run.
+
+10. **Coverage gate scope covers the Wave 3 surface (not just `src/lib/vault/**`):\*\*
+    - Task 5 Step 1 extends `vitest.config.ts` `coverage.include` to `['src/lib/vault/**/*.ts', 'src/lib/schemas.ts', 'src/lib/dossier.ts', 'src/lib/media/**/*.ts']` so the 80/80/80/80 threshold applies to schemas + dossier + media too.
+    - The previous silent exclusion of Wave 3 files (revision 0) was a coverage-hygiene regression; this revision fixes it.
+
+11. **TS strictness on stubbed child-process seams.**
+    - `makeFakeSpawn()` and the inline non-zero-exit fake in `tts.test.ts` both cast `as unknown as ChildProcessWithoutNullStreams` rather than building a structurally-complete one. This is intentional: `ttsRender` only ever reaches for `child.stdin`, `child.stderr`, and the `'close'` / `'error'` events; fabricating a fake `stdout` / `pid` / `stdio` array on every test would add noise without adding coverage.
+
+12. **Filename random-suffix entropy is correctly described.**
+    - `buildFilename` uses `crypto.randomBytes(3).toString('hex')` — exactly 6 hex chars = 24 bits ≈ 1 in 16.7 million collisions per slug-second. The docstring and the risk register agree on this number (revision 0 claimed "36 bits ≈ 1 in 2 billion", which contradicted `randomBytes(4).toString('hex').slice(0, 6)` = 24 bits — fixed by switching to `randomBytes(3)` cleanly).
 
 ---
 
