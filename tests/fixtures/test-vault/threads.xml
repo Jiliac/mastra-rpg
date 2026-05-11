@@ -1,0 +1,20 @@
+<threads>
+  <thread id="fresh-clock">
+    <name>Fresh Clock</name>
+    <stake>A clock that has barely started.</stake>
+    <progress>1/8</progress>
+    <trigger>Advances by standard days.</trigger>
+  </thread>
+  <thread id="mid-clock">
+    <name>Mid Clock</name>
+    <stake>A clock at the midpoint.</stake>
+    <progress>4/7</progress>
+    <trigger>Advances by standard days.</trigger>
+  </thread>
+  <thread id="matured-clock">
+    <name>Matured Clock</name>
+    <stake>A clock that has reached maturity.</stake>
+    <progress>5/5</progress>
+    <trigger>Advances by standard days.</trigger>
+  </thread>
+</threads>

@@ -1,0 +1,18 @@
+<character>
+  <name>Test Captain</name>
+  <age>40 standard years</age>
+  <role>test captain</role>
+  <background>A test background.</background>
+  <skills>Test skills.</skills>
+  <inventory>
+    <item significance="key">Test item</item>
+  </inventory>
+  <wealth>strapped</wealth>
+  <reputation>
+    <faction slug="red-banner">tolerated</faction>
+    <faction slug="blue-river">unknown</faction>
+  </reputation>
+  <relationships>
+    <npc slug="kessha">first mate</npc>
+  </relationships>
+</character>

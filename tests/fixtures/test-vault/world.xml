@@ -1,0 +1,13 @@
+<world>
+  <date calendar="GSC">7 ABY, Month 4, Standard Day 20</date>
+  <location>
+    <region>Test Region</region>
+    <city>Test City</city>
+    <place slug="iron-promise">iron-promise</place>
+  </location>
+  <weather>Clear, cold.</weather>
+  <season>Test season.</season>
+  <conditions>
+    <note>A test note.</note>
+  </conditions>
+</world>
