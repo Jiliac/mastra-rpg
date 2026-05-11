@@ -1236,7 +1236,7 @@ export interface InworldTtsLike {
     model: string;
     encoding: 'OGG_OPUS' | 'MP3' | 'LINEAR16';
     outputFile?: string;
-    speed?: number;
+    speakingRate?: number;
     temperature?: number;
   }): Promise<Uint8Array>;
 }
@@ -1257,8 +1257,8 @@ export interface TtsOptions {
   output: string;
   /** Inworld API key. Defaults to `process.env.INWORLD_API_KEY`. */
   apiKey?: string;
-  /** Per-request speed; passed through to the SDK if set. */
-  speed?: number;
+  /** Per-request speaking-rate multiplier; passed through to the SDK if set. */
+  speakingRate?: number;
   /** Per-request temperature; passed through to the SDK if set. */
   temperature?: number;
   deps?: TtsDeps;
@@ -1287,7 +1287,7 @@ export async function ttsRender(text: string, options: TtsOptions): Promise<stri
     model: INWORLD_MODEL,
     encoding: DEFAULT_ENCODING,
   };
-  if (typeof options.speed === 'number') args.speed = options.speed;
+  if (typeof options.speakingRate === 'number') args.speakingRate = options.speakingRate;
   if (typeof options.temperature === 'number') args.temperature = options.temperature;
 
   const bytes = await inworld.generate(args);

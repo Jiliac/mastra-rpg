@@ -84,6 +84,24 @@ describe('ttsRender', () => {
     expect(stat.size).toBeGreaterThan(0);
   });
 
+  it('forwards optional speakingRate and temperature to the SDK when provided', async () => {
+    const inworld = makeFakeInworld();
+    const out = await tmpOgg();
+    const deps: TtsDeps = { inworld };
+
+    await ttsRender('hello world', {
+      output: out,
+      deps,
+      speakingRate: 1.2,
+      temperature: 0.7,
+    });
+
+    expect(inworld.generate).toHaveBeenCalledTimes(1);
+    const args = inworld.generate.mock.calls[0][0] as Record<string, unknown>;
+    expect(args.speakingRate).toBe(1.2);
+    expect(args.temperature).toBe(0.7);
+  });
+
   it('throws when API key is missing (no apiKey arg + no env var + no injected client)', async () => {
     const prev = process.env.INWORLD_API_KEY;
     delete process.env.INWORLD_API_KEY;
