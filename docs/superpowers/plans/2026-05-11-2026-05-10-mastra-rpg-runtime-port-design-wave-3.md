@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the pure-TypeScript contracts and external-service wrappers at `src/lib/schemas.ts`, `src/lib/dossier.ts`, `src/lib/media/tts.ts`, and `src/lib/media/image.ts` so Wave 4's tools/agents and Wave 5's workflow can: validate agent I/O via Zod (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`); assemble per-agent dossiers (faction / narrator / illustrator) from already-loaded vault state plus a pure `identifyOnStage` deterministic on-stage detector and an `extractVisualBlock` style-guide reader; render Inworld TTS 2 → mp3 → ffmpeg → ogg audio; and write `gpt-image-1` PNGs with a collision-proof `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png` filename pattern.
+**Goal:** Build the pure-TypeScript contracts and external-service wrappers at `src/lib/schemas.ts`, `src/lib/dossier.ts`, `src/lib/media/tts.ts`, and `src/lib/media/image.ts` so Wave 4's tools/agents and Wave 5's workflow can: validate agent I/O via Zod (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`); assemble per-agent dossiers (faction / narrator / illustrator) from already-loaded vault state plus a pure `identifyOnStage` deterministic on-stage detector and an `extractVisualBlock` style-guide reader; render Inworld TTS 2 audio (native OGG Opus, no ffmpeg) via the official `@inworld/tts` SDK; and write `gpt-image-2` PNGs via the official `openai` SDK with a collision-proof `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png` filename pattern.
 
-**Architecture:** Four new focused files. `schemas.ts` (~50 LOC) is pure Zod with no I/O. `dossier.ts` (~200 LOC) is pure: three string builders, one deterministic detector, one regex extractor — all take pre-loaded objects (no `fs` reads). `media/tts.ts` (~80 LOC) does HTTPS POST to Inworld TTS v2 (`api.inworld.ai/tts/v1/voice` per OpenClaw reference) → base64 decode → MP3 buffer → `ffmpeg` child process pipe → OGG Opus file. `media/image.ts` (~80 LOC) does HTTPS POST to OpenAI `/v1/images/generations` with `model: gpt-image-1`, `prompt`, `n: 1`, `size`, `quality` (NOT `response_format` — `gpt-image-1` rejects it and returns `b64_json` by default), decodes `data[0].b64_json`, and writes a PNG with a timestamp + slug + 6-char random suffix filename under `<vaultRoot>/images/`. No new runtime deps: `fetch` is global in Node 22; `ffmpeg` is shelled via `node:child_process` (already required to be on PATH per spec Error-matrix line 339).
+**Architecture:** Four new focused files. `schemas.ts` (~50 LOC) is pure Zod with no I/O. `dossier.ts` (~200 LOC) is pure: three string builders, one deterministic detector, one regex extractor — all take pre-loaded objects (no `fs` reads). `media/tts.ts` (~60 LOC) uses the `@inworld/tts` SDK's `InworldTTS().generate({ text, voice, model: 'inworld-tts-2', encoding: 'OGG_OPUS' })` to obtain a `Uint8Array` of OGG Opus bytes directly, then writes them to the target path. No ffmpeg, no MP3 intermediate, no `spawn` — the SDK's native `OGG_OPUS` encoding eliminates the legacy mp3→ffmpeg→ogg pipeline. `media/image.ts` (~80 LOC) uses the `openai` SDK's `client.images.generate({ model: 'gpt-image-2', prompt, quality: 'high', size, n: 1 })`, decodes `result.data[0].b64_json`, and writes a PNG with a timestamp + slug + 6-char random suffix filename under `<vaultRoot>/images/`. Two new runtime deps are added in package.json: `@inworld/tts` and `openai`.
 
-**Tech Stack:** TypeScript (ES2022, strict), Zod 4 (already present), Node 22.13+ `node:fs/promises`, `node:crypto.randomBytes` for the 6-char filename suffix, `node:child_process.spawn` for `ffmpeg`, global `fetch`. Tests use vitest + `vi.fn()` to stub `fetch` and child-process for unit-level coverage of `tts.ts` / `image.ts` (the spec calls them "live tests, stubbable" — we structure the modules so the network/process boundaries are injectable). No new package.json dependencies are introduced in this wave.
+**Tech Stack:** TypeScript (ES2022, strict), Zod 4 (already present), Node 22.13+ `node:fs/promises`, `node:crypto.randomBytes` for the 6-char filename suffix, `@inworld/tts` SDK for TTS, `openai` SDK for images. Tests use vitest + `vi.fn()` to stub an injected `InworldTTS`-like object and an injected `OpenAI` client for unit-level coverage of `tts.ts` / `image.ts` (the spec calls them "live tests, stubbable" — we structure the modules so the SDK client is injectable via `TtsDeps.inworld` / `ImageDeps.openai`).
 
-**Source spec:** `docs/superpowers/specs/2026-05-10-mastra-rpg-runtime-port-design.md` — Wave 3 section (lines 529–545), Output schemas Zod block (lines 143–172), Per-turn workflow Step 1/3/4 dossier construction (lines 177–262), `stripForTts` semantics (lines 256–258 — already implemented in Wave-1 `wikilinks.ts`, consumed by `tts.ts`), Error-matrix rows for "Image generation 5xx", "TTS API failure", "ffmpeg not on PATH" (lines 336–339), and Concurrency invariant §4 "Image filename includes random suffix" (lines 366–367). The OpenClaw reference scripts at `/Users/valentin/Development/ai/maz_rpg/openclaw/skills/inworld-tts/scripts/tts.sh` and `/Users/valentin/Development/ai/maz_rpg/openclaw/skills/rpg-image/scripts/image.py` are ground truth for the API endpoints, voice id (`Hank`), model id (`inworld-tts-1.5-max` — per spec line 323 may be re-verified at impl time but we ship with that), and the `## Visual` regex (`_VISUAL_RE`).
+**Source spec:** `docs/superpowers/specs/2026-05-10-mastra-rpg-runtime-port-design.md` — Wave 3 section (lines 529–545), Output schemas Zod block (lines 143–172), Per-turn workflow Step 1/3/4 dossier construction (lines 177–262), `stripForTts` semantics (lines 256–258 — already implemented in Wave-1 `wikilinks.ts`, consumed by `tts.ts`), Error-matrix rows for "Image generation 5xx", "TTS API failure", "ffmpeg not on PATH" (lines 336–339; note ffmpeg is no longer required for Wave 3 — see "SDK choices" below), and Concurrency invariant §4 "Image filename includes random suffix" (lines 366–367). The OpenClaw reference scripts at `/Users/valentin/Development/ai/maz_rpg/openclaw/skills/inworld-tts/scripts/tts.sh` and `/Users/valentin/Development/ai/maz_rpg/openclaw/skills/rpg-image/scripts/image.py` are historical ground truth for the request bodies, but Wave 3 ships against the current `@inworld/tts` and `openai` SDKs with the user-confirmed model ids `inworld-tts-2` and `gpt-image-2` (which OVERRIDE the OpenClaw `inworld-tts-1.5-max` and any earlier `gpt-image-1` references). The `## Visual` regex (`_VISUAL_RE`) and the voice id (`Hank`) carry over verbatim.
 
 **Wave-1 outputs you depend on (already merged, do NOT modify):**
 
@@ -56,13 +56,13 @@ ls tests/fixtures/test-vault/style-guide.md tests/fixtures/test-vault/journal.md
 
 Expected: all four files listed. If any missing, abort — Wave 1 fixture is incomplete.
 
-- [ ] **Verify `ffmpeg` is on PATH (spec exit criterion for media).**
+- [ ] **Verify `ffmpeg` is on PATH (informational only for Wave 3).**
 
 ```bash
 which ffmpeg
 ```
 
-Expected: a non-empty path. If missing, install before continuing (`brew install ffmpeg` on macOS) — the spec's Error-matrix row "ffmpeg not on PATH" mandates fail-fast at server startup, so we cannot ship Wave 3 without it locally.
+Expected: a non-empty path. **Wave 3 itself no longer requires `ffmpeg`** — the `@inworld/tts` SDK returns native OGG Opus bytes via `encoding: 'OGG_OPUS'`, removing the legacy mp3→ffmpeg→ogg pipeline. The spec's Error-matrix row "ffmpeg not on PATH" still applies to _later_ waves (5–6) if any other audio path is added; whether to keep the server-startup fail-fast for ffmpeg is a Wave-5 decision. For Wave 3, a missing ffmpeg is **non-blocking** — proceed without it.
 
 - [ ] **Verify the working tree is clean on the wave-3 branch.**
 
@@ -78,23 +78,35 @@ Expected: clean tree, branch `auto/2026-05-10-mastra-rpg-runtime-port-design-wav
 
 Production files (all new):
 
-| File                     | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/schemas.ts`     | Four Zod schemas + their inferred TypeScript types: `FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`. Exact shape per spec lines 143–172. No I/O, no dependency on `src/lib/vault/`. Importable by tools, agents, workflow, and dossier builders alike.                                                                                                                                                                           |
-| `src/lib/dossier.ts`     | Pure functions assembling per-agent string inputs (XML-tag-bracketed sections) from pre-loaded vault state: `identifyOnStage(playerInput, recent, entities)`, `extractVisualBlock(styleGuide)`, `buildFactionDossier(input)`, `buildNarratorDossier(input)`, `buildIllustratorDossier(input)`. No `fs` reads; caller (the workflow in Wave 5) does all loading. Mirrors OpenClaw `rpg-narrator/buildDossier.py`.                                     |
-| `src/lib/media/tts.ts`   | `ttsRender(text, options) → Promise<string>` that POSTs to Inworld TTS v2, base64-decodes the response into an MP3 buffer, pipes it through `ffmpeg` to an OGG Opus file at `options.output`, and returns the resolved absolute path. Injectable seams: `fetch` impl, `spawn` impl — so unit tests can stub both without monkey-patching globals.                                                                                                    |
-| `src/lib/media/image.ts` | `generateImage({ prompt, slug, vaultRoot }) → Promise<ImageMeta>` that POSTs to OpenAI `/v1/images/generations` with `model: gpt-image-1`, base64-decodes the result, writes the PNG under `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`, and returns `{ filename, path, prompt, slug }` (matches `ImageMeta` schema). Same injectable seams as TTS. `buildFilename` is also exported for unit-level filename-pattern assertions. |
+| File                     | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/schemas.ts`     | Four Zod schemas + their inferred TypeScript types: `FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`. Exact shape per spec lines 143–172. No I/O, no dependency on `src/lib/vault/`. Importable by tools, agents, workflow, and dossier builders alike.                                                                                                                                                                                                                                                  |
+| `src/lib/dossier.ts`     | Pure functions assembling per-agent string inputs (XML-tag-bracketed sections) from pre-loaded vault state: `identifyOnStage(playerInput, recent, entities)`, `extractVisualBlock(styleGuide)`, `buildFactionDossier(input)`, `buildNarratorDossier(input)`, `buildIllustratorDossier(input)`. No `fs` reads; caller (the workflow in Wave 5) does all loading. Mirrors OpenClaw `rpg-narrator/buildDossier.py`.                                                                                                            |
+| `src/lib/media/tts.ts`   | `ttsRender(text, options) → Promise<string>` that calls `InworldTTS().generate({ text, voice, model: 'inworld-tts-2', encoding: 'OGG_OPUS' })` from the `@inworld/tts` SDK, writes the returned `Uint8Array` of OGG Opus bytes to `options.output`, and returns the resolved absolute path. Injectable seam: `TtsDeps.inworld` (a fake `InworldTTS`-shaped object) — no ffmpeg, no `spawn`, no raw `fetch`.                                                                                                                 |
+| `src/lib/media/image.ts` | `generateImage({ prompt, slug, vaultRoot }) → Promise<ImageMeta>` that calls `client.images.generate({ model: 'gpt-image-2', prompt, quality: 'high', size, n: 1 })` from the `openai` SDK, base64-decodes `result.data[0].b64_json`, writes the PNG under `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`, and returns `{ filename, path, prompt, slug }` (matches `ImageMeta` schema). Injectable seam: `ImageDeps.openai`. `buildFilename` is also exported for unit-level filename-pattern assertions. |
 
 Test files (co-located):
 
-| File                          | Responsibility                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/schemas.test.ts`     | Each schema accepts valid shapes and rejects the documented invalid shapes (empty `prose`, missing `decision`, etc.). `ImageMeta` validates the workflow contract end-to-end.                                                                                                                                                                        |
-| `src/lib/dossier.test.ts`     | `extractVisualBlock` returns the right slice for the fixture style-guide (and `null` if missing). `identifyOnStage` is deterministic against a hand-built recent-journal + player-input + entities map (kessha on stage → `factionsToSpawn` includes `red-banner`, dedup correct). All three `build*Dossier` functions produce snapshot-stable text. |
-| `src/lib/media/tts.test.ts`   | `ttsRender` calls the correct URL with the correct headers/body, handles 200 + audioContent decode → MP3 buffer → ffmpeg path, surfaces non-200 as a thrown error. Uses an injected `fetch` and `spawn`. One live-test gate (`describe.runIf`) guarded by `INWORLD_API_KEY` for the spec's "hello world" smoke.                                      |
-| `src/lib/media/image.test.ts` | `buildFilename` matches the regex `^\d{8}-\d{6}-[a-z0-9-]+-[a-z0-9]{6}\.png$`; same slug twice produces different filenames; `generateImage` calls the correct OpenAI endpoint with the right body, writes the b64-decoded bytes to disk, returns the right `ImageMeta`. One live-test gate guarded by `OPENAI_API_KEY` for the spec's PNG smoke.    |
+| File                          | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/schemas.test.ts`     | Each schema accepts valid shapes and rejects the documented invalid shapes (empty `prose`, missing `decision`, etc.). `ImageMeta` validates the workflow contract end-to-end.                                                                                                                                                                                                                                  |
+| `src/lib/dossier.test.ts`     | `extractVisualBlock` returns the right slice for the fixture style-guide (and `null` if missing). `identifyOnStage` is deterministic against a hand-built recent-journal + player-input + entities map (kessha on stage → `factionsToSpawn` includes `red-banner`, dedup correct). All three `build*Dossier` functions produce snapshot-stable text.                                                           |
+| `src/lib/media/tts.test.ts`   | `ttsRender` invokes the injected `InworldTTS`-like fake with the right `{ text, voice, model: 'inworld-tts-2', encoding: 'OGG_OPUS' }`, writes the returned bytes to the target path, and surfaces SDK errors as thrown errors. One live-test gate (`describe.runIf`) guarded by `INWORLD_API_KEY` for the spec's "hello world" smoke.                                                                         |
+| `src/lib/media/image.test.ts` | `buildFilename` matches the regex `^\d{8}-\d{6}-[a-z0-9-]+-[a-z0-9]{6}\.png$`; same slug twice produces different filenames; `generateImage` invokes the injected `OpenAI` client's `images.generate` with `{ model: 'gpt-image-2', quality: 'high', n: 1, … }`, writes the b64-decoded bytes to disk, returns the right `ImageMeta`. One live-test gate guarded by `OPENAI_API_KEY` for the spec's PNG smoke. |
 
 No new fixtures. The dossier tests synthesize their inputs inline (so test reviewers can see exactly what an `AlwaysLoaded`-shaped object looks like at the call site without chasing fixture files).
+
+---
+
+## SDK choices
+
+Wave 3 introduces two external-service wrappers; this section documents which client each wrapper uses, and which SDK the _later_ waves will use for the LLM calls Wave 3 deliberately does not make:
+
+- **Images (Wave 3):** the official `openai` Node SDK. We call `client.images.generate({ model: 'gpt-image-2', prompt, quality: 'high', size, n: 1 })` and decode `result.data[0].b64_json`. The Vercel AI SDK does not currently expose image generation, so we use the OpenAI SDK directly. The `OpenAI` client constructor is injectable via `ImageDeps.openai` for tests.
+- **TTS (Wave 3):** the official `@inworld/tts` Node SDK. We call `InworldTTS().generate({ text, voice, model: 'inworld-tts-2', encoding: 'OGG_OPUS' })` and write the returned `Uint8Array` directly to disk. Because the SDK supports `OGG_OPUS` natively, the legacy mp3 → ffmpeg → ogg pipeline is **dropped** — `media/tts.ts` no longer shells `ffmpeg`. The `InworldTTS` constructor is injectable via `TtsDeps.inworld` for tests.
+- **LLM calls (waves 4–5, not this wave):** the Vercel AI SDK. The faction / narrator / illustrator agents will call `generateObject` with the Zod schemas defined in this wave's `src/lib/schemas.ts`. Wave 3 produces those schemas (plus dossiers + media wrappers); it does NOT call the LLM, so the Vercel AI SDK choice does not affect Wave 3 code — but is noted here so the contracts in `schemas.ts` are designed with `generateObject` consumption in mind.
+
+Model ids are fixed by user fiat for this wave: image model is `gpt-image-2` (NOT `gpt-image-1`), TTS model is `inworld-tts-2` (NOT `inworld-tts-1.5-max`), default image quality is `'high'`. These overrides supersede any conflicting reference in the spec, OpenClaw scripts, or prior plan revisions.
 
 ---
 
@@ -106,7 +118,7 @@ Order (contracts first, then pure builders, then media wrappers; mirrors the spe
 
 1. **Task 1: `schemas.ts`** — leaf-most contract; everything else imports `ImageMeta`. Zod-only; no `fs`, no Mastra.
 2. **Task 2: `dossier.ts`** — pure builders + on-stage detector + visual-block extractor. Imports `schemas.ts` only for one type (`ImageMeta` isn't needed; the dossier is text). Wave-1 types are imported but no `fs` calls are made.
-3. **Task 3: `media/tts.ts`** — first wrapper to land; smaller surface than image. Establishes the "inject fetch + spawn" pattern that image.ts re-uses.
+3. **Task 3: `media/tts.ts`** — first wrapper to land; smaller surface than image. Establishes the "inject the SDK client" pattern (`TtsDeps.inworld`) that image.ts re-uses with `ImageDeps.openai`.
 4. **Task 4: `media/image.ts`** — second wrapper; re-uses the inject-the-IO-boundary pattern from `tts.ts`. Includes the random-suffix filename helper (verifiable in isolation).
 5. **Task 5: Coverage gate verification + final compile/lint check.**
 
@@ -1041,38 +1053,40 @@ EOF
 
 ---
 
-## Task 3: `media/tts.ts` — Inworld TTS v2 → mp3 → ffmpeg → ogg
+## Task 3: `media/tts.ts` — `@inworld/tts` SDK with native OGG Opus
 
-Spec lines 537–543 require a non-empty `.ogg` for "hello world" and design the module so unit tests can stub. OpenClaw's `tts.sh` (lines 80–102) defines the on-the-wire contract: POST `https://api.inworld.ai/tts/v1/voice` with `Authorization: Basic $INWORLD_API_KEY`, body `{ voiceId, modelId: 'inworld-tts-1.5-max', text, speed?, temperature? }`, response `{ audioContent: <base64 mp3> }`. We then pipe the decoded MP3 through `ffmpeg -i - -c:a libopus -b:a 64k <out.ogg>`.
+Spec lines 537–543 require a non-empty `.ogg` for "hello world" and design the module so unit tests can stub. We ship against the official `@inworld/tts` Node SDK (model id `inworld-tts-2`), which exposes `InworldTTS().generate({ text, voice, model, encoding: 'OGG_OPUS' })` returning a `Uint8Array` of native OGG Opus bytes — no MP3 intermediate, no ffmpeg shell-out, no spawn. The wrapper is a thin shim: read API key, call the SDK, write the returned bytes to disk, return the absolute path.
 
-The design pattern for stubbability is "inject the IO boundary as an options field, default to the global". The module exports a single function `ttsRender(text, options)` plus the `TtsDeps` interface for tests to pass in a custom `fetch` and `spawn`. Spec Error-matrix row "ffmpeg not on PATH" (line 339) says we fail fast at server startup — the runtime check is the workflow's responsibility (Wave 5); `tts.ts` itself trusts that `ffmpeg` is present and reports the spawn error if it isn't.
+The design pattern for stubbability is "inject the SDK client as an options field, default to a real `InworldTTS()`". The module exports a single function `ttsRender(text, options)` plus the `TtsDeps` interface for tests to pass in a fake `InworldTTS`-shaped object (anything with a `generate(args) → Promise<Uint8Array>` method). Because the SDK returns OGG bytes directly, the spec's Error-matrix row "ffmpeg not on PATH" (line 339) is no longer relevant to this module — the ffmpeg pre-flight check is informational only for Wave 3 (see pre-flight section above).
 
 **Files:**
 
 - Create: `src/lib/media/tts.ts`
 - Test: `src/lib/media/tts.test.ts`
 
-- [ ] **Step 0: Verify the Inworld TTS v2 contract via ctx7 BEFORE writing any code.**
-
-Spec line 323 explicitly flags the model id (`inworld-tts-1.5-max`) as "to be verified at implementation time", and the auth scheme inherited from OpenClaw's `tts.sh` (`Authorization: Basic <api-key>`) is also provisional — Inworld's current public docs use a Bearer token from a token-exchange step in some flows. Confirm both before writing code:
+- [ ] **Step 0: Add the `@inworld/tts` dependency and verify the SDK surface via ctx7.**
 
 ```bash
-npx ctx7@latest library Inworld
-# Pick the Inworld TTS / Inworld AI library id from the output.
-npx ctx7@latest docs <libraryId> "TTS v2 voice synthesis endpoint request body, model id, and authentication scheme"
+# Add the dependency (uses pnpm per project convention).
+pnpm add @inworld/tts
+
+# Verify the current SDK surface — the model id `inworld-tts-2` and the
+# `OGG_OPUS` encoding are fixed by user fiat for this wave (do NOT
+# re-litigate the model name via ctx7), but the exact argument shape of
+# `InworldTTS().generate({ ... })` should be confirmed against current docs.
+npx ctx7@latest library "Inworld TTS"
+# Pick the @inworld/tts library id from the output.
+npx ctx7@latest docs <libraryId> "InworldTTS generate method arguments: text, voice, model, encoding, outputFile, return type"
 ```
 
-Paste the verified shape into this section of the plan (replacing the block below) before writing the failing test in Step 1:
+The user-fixed parameters are:
 
-> **Verified Inworld TTS v2 shape (fill in after ctx7):**
->
-> - Endpoint URL (current OpenClaw uses `https://api.inworld.ai/tts/v1/voice` — confirm or update).
-> - Auth scheme: confirm `Authorization: Basic <INWORLD_API_KEY>` is still accepted, OR document the Bearer + token-exchange flow if it has replaced Basic. Update `tts.ts` `Authorization` header accordingly.
-> - Model id: confirm `inworld-tts-1.5-max` is still the production id (or update to e.g. `inworld-tts-2.0` / whatever the docs name).
-> - Voice id `Hank`: confirm it is still a valid voice.
-> - Response shape: confirm `{ audioContent: <base64-mp3> }` is still the shape (some Inworld endpoints return `{ result: { audioContent } }`).
+- **Model id:** `inworld-tts-2` (NOT `inworld-tts-1.5-max`; the spec was written before TTS-2 existed). Do not change this via ctx7 output.
+- **Encoding:** `'OGG_OPUS'` (native — eliminates mp3→ffmpeg→ogg).
+- **Voice id:** `'Hank'` (carried over from OpenClaw; verify it is still a valid TTS-2 voice via ctx7 if the live smoke 4xx's).
+- **Auth:** the SDK reads `INWORLD_API_KEY` from the environment; an `{ apiKey }` constructor arg is also accepted.
 
-Treat the existing constants in this plan (`INWORLD_URL`, `INWORLD_MODEL`, the `Authorization: Basic` header) as PROVISIONAL — they reflect OpenClaw at the time of writing, not necessarily Inworld today. Do not proceed to Step 1 until ctx7 results have been pasted in and the implementation in Step 3 has been reconciled with them. The live-smoke test (Step 5) will surface a stale model id or wrong auth as a 4xx and force a Step 0 re-run.
+If ctx7 reports a renamed argument key (e.g. `voice` → `voiceName`) or a different return shape (e.g. `{ audio: Uint8Array }` instead of `Uint8Array`), update Step 1 and Step 3 accordingly before continuing. The live-smoke test (Step 5) will surface any remaining mismatch as an SDK exception.
 
 - [ ] **Step 1: Write the failing test.**
 
@@ -1082,67 +1096,23 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { EventEmitter } from 'node:events';
-import { Writable } from 'node:stream';
-import { ttsRender, type TtsDeps } from './tts';
+import { ttsRender, type TtsDeps, type InworldTtsLike } from './tts';
 
-const SAMPLE_B64 = Buffer.from('fake-mp3-bytes').toString('base64');
-
-function makeFakeFetch(status = 200, body: unknown = { audioContent: SAMPLE_B64 }) {
-  return vi.fn(async (url: string, init: RequestInit) => {
-    const res = {
-      ok: status >= 200 && status < 300,
-      status,
-      statusText: status === 200 ? 'OK' : 'Bad',
-      json: async () => body,
-      text: async () => JSON.stringify(body),
-    } as unknown as Response;
-    void url;
-    void init;
-    return res;
-  });
-}
+const SAMPLE_BYTES = new Uint8Array(Buffer.from('fake-ogg-bytes'));
 
 /**
- * Fake "ffmpeg" child process: reads stdin, writes "<input>-as-ogg" to the
- * output path passed via argv, then emits `close` with code 0. We use an
- * `unknown` cast at the seam (rather than building a structurally-complete
- * `ChildProcessWithoutNullStreams`) — `ttsRender` only ever touches
- * `child.stdin`, `child.stderr`, and the `'close'` / `'error'` events.
+ * Fake InworldTTS-shaped object. `ttsRender` only ever calls
+ * `client.generate(args)` and expects a `Uint8Array` back, so we don't have
+ * to mirror the entire SDK surface — only the `generate` method.
  */
-function makeFakeSpawn() {
-  return vi.fn((cmd: string, args: string[]) => {
-    expect(cmd).toBe('ffmpeg');
-    const outArg = args[args.length - 1];
-    const ee = new EventEmitter() as EventEmitter & {
-      stdin: Writable;
-      stderr: EventEmitter;
-      kill: () => void;
-    };
-    const collected: Buffer[] = [];
-    ee.stdin = new Writable({
-      write(chunk, _enc, cb) {
-        collected.push(chunk as Buffer);
-        cb();
-      },
-      final(cb) {
-        // simulate ffmpeg writing an ogg file
-        void fs
-          .writeFile(outArg, Buffer.concat([...collected, Buffer.from('-as-ogg')]))
-          .then(() => {
-            ee.emit('close', 0);
-            cb();
-          })
-          .catch(cb);
-      },
-    });
-    ee.stderr = new EventEmitter();
-    ee.kill = () => undefined;
-    // The cast is `unknown` then `ChildProcessWithoutNullStreams` because
-    // we deliberately don't populate `stdout` (or `pid`, `stdio`, etc.) —
-    // strict TS would otherwise reject the narrower cast.
-    return ee as unknown as import('node:child_process').ChildProcessWithoutNullStreams;
+function makeFakeInworld(bytes: Uint8Array | Error = SAMPLE_BYTES): InworldTtsLike & {
+  generate: ReturnType<typeof vi.fn>;
+} {
+  const generate = vi.fn(async (_args: Record<string, unknown>) => {
+    if (bytes instanceof Error) throw bytes;
+    return bytes;
   });
+  return { generate };
 }
 
 async function tmpOgg(): Promise<string> {
@@ -1151,11 +1121,10 @@ async function tmpOgg(): Promise<string> {
 }
 
 describe('ttsRender', () => {
-  it('POSTs to Inworld with the right URL, headers, and body', async () => {
-    const fetchFn = makeFakeFetch();
-    const spawnFn = makeFakeSpawn();
+  it('calls InworldTTS.generate with the right text, voice, model, and encoding', async () => {
+    const inworld = makeFakeInworld();
     const out = await tmpOgg();
-    const deps: TtsDeps = { fetch: fetchFn as unknown as typeof fetch, spawn: spawnFn };
+    const deps: TtsDeps = { inworld };
 
     await ttsRender('hello world', {
       voice: 'Hank',
@@ -1164,24 +1133,18 @@ describe('ttsRender', () => {
       deps,
     });
 
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe('https://api.inworld.ai/tts/v1/voice');
-    expect(init.method).toBe('POST');
-    const headers = init.headers as Record<string, string>;
-    expect(headers['Authorization']).toBe('Basic secret');
-    expect(headers['Content-Type']).toBe('application/json');
-    const body = JSON.parse(init.body as string);
-    expect(body.voiceId).toBe('Hank');
-    expect(body.modelId).toBe('inworld-tts-1.5-max');
-    expect(body.text).toBe('hello world');
+    expect(inworld.generate).toHaveBeenCalledTimes(1);
+    const args = inworld.generate.mock.calls[0][0] as Record<string, unknown>;
+    expect(args.text).toBe('hello world');
+    expect(args.voice).toBe('Hank');
+    expect(args.model).toBe('inworld-tts-2');
+    expect(args.encoding).toBe('OGG_OPUS');
   });
 
-  it('writes a non-empty .ogg file and returns its absolute path', async () => {
-    const fetchFn = makeFakeFetch();
-    const spawnFn = makeFakeSpawn();
+  it('writes the returned OGG bytes to options.output and returns the absolute path', async () => {
+    const inworld = makeFakeInworld();
     const out = await tmpOgg();
-    const deps: TtsDeps = { fetch: fetchFn as unknown as typeof fetch, spawn: spawnFn };
+    const deps: TtsDeps = { inworld };
 
     const returned = await ttsRender('hello world', {
       voice: 'Hank',
@@ -1190,55 +1153,32 @@ describe('ttsRender', () => {
       deps,
     });
     expect(returned).toBe(out);
+    const written = await fs.readFile(out);
+    expect(written.equals(Buffer.from(SAMPLE_BYTES))).toBe(true);
+  });
+
+  it('throws when the SDK errors (e.g. 5xx surfaced as an SDK exception)', async () => {
+    const inworld = makeFakeInworld(new Error('Inworld 500: server boom'));
+    const out = await tmpOgg();
+    const deps: TtsDeps = { inworld };
+
+    await expect(
+      ttsRender('hello', { voice: 'Hank', output: out, apiKey: 'k', deps }),
+    ).rejects.toThrow(/server boom/);
+  });
+
+  it('creates the output directory if missing', async () => {
+    const inworld = makeFakeInworld();
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-tts-mkdir-'));
+    const out = path.join(baseDir, 'nested', 'dir', 'out.ogg');
+    const deps: TtsDeps = { inworld };
+
+    await ttsRender('hello', { voice: 'Hank', output: out, apiKey: 'k', deps });
     const stat = await fs.stat(out);
     expect(stat.size).toBeGreaterThan(0);
   });
 
-  it('throws on a non-200 Inworld response with the status code in the message', async () => {
-    const fetchFn = makeFakeFetch(500, { error: 'server boom' });
-    const spawnFn = makeFakeSpawn();
-    const out = await tmpOgg();
-    const deps: TtsDeps = { fetch: fetchFn as unknown as typeof fetch, spawn: spawnFn };
-
-    await expect(
-      ttsRender('hello', { voice: 'Hank', output: out, apiKey: 'k', deps }),
-    ).rejects.toThrow(/500/);
-    expect(spawnFn).not.toHaveBeenCalled();
-  });
-
-  it('throws when ffmpeg exits non-zero', async () => {
-    const fetchFn = makeFakeFetch();
-    const spawnFn = vi.fn(() => {
-      const ee = new EventEmitter() as EventEmitter & {
-        stdin: Writable;
-        stderr: EventEmitter;
-        kill: () => void;
-      };
-      ee.stdin = new Writable({
-        write(_c, _e, cb) {
-          cb();
-        },
-        final(cb) {
-          ee.emit('close', 7);
-          cb();
-        },
-      });
-      ee.stderr = new EventEmitter();
-      ee.kill = () => undefined;
-      // See note on the canonical makeFakeSpawn() above: `unknown` cast
-      // because we deliberately omit `stdout` and other CPwithoutNullStreams
-      // fields that ttsRender never touches.
-      return ee as unknown as import('node:child_process').ChildProcessWithoutNullStreams;
-    });
-    const out = await tmpOgg();
-    const deps: TtsDeps = { fetch: fetchFn as unknown as typeof fetch, spawn: spawnFn };
-
-    await expect(
-      ttsRender('hello', { voice: 'Hank', output: out, apiKey: 'k', deps }),
-    ).rejects.toThrow(/ffmpeg/i);
-  });
-
-  it('throws when API key is missing (no apiKey arg + no env var)', async () => {
+  it('throws when API key is missing (no apiKey arg + no env var + no injected client)', async () => {
     const prev = process.env.INWORLD_API_KEY;
     delete process.env.INWORLD_API_KEY;
     const out = await tmpOgg();
@@ -1255,7 +1195,7 @@ describe('ttsRender', () => {
 // Live smoke — gated on env var presence. Spec exit criterion line 543.
 // Run manually with `INWORLD_API_KEY=... pnpm test src/lib/media/tts.test.ts`.
 describe.runIf(!!process.env.INWORLD_API_KEY)('ttsRender — live smoke', () => {
-  it('produces a non-empty .ogg for "hello world"', async () => {
+  it('produces a non-empty .ogg for "hello world" via @inworld/tts SDK', async () => {
     const out = await tmpOgg();
     const returned = await ttsRender('hello world', { voice: 'Hank', output: out });
     expect(returned).toBe(out);
@@ -1279,19 +1219,35 @@ Expected: FAIL with `Cannot find module './tts'`.
 // src/lib/media/tts.ts
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { spawn as realSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { InworldTTS } from '@inworld/tts';
 
-const INWORLD_URL = 'https://api.inworld.ai/tts/v1/voice';
-const INWORLD_MODEL = 'inworld-tts-1.5-max';
+const INWORLD_MODEL = 'inworld-tts-2';
+const DEFAULT_ENCODING = 'OGG_OPUS' as const;
 
 /**
- * Dependency seams so unit tests can stub the network and the child process
- * without monkey-patching globals. Defaults to the real `fetch` and
- * `child_process.spawn`.
+ * Minimal structural type for the `@inworld/tts` client — `ttsRender` only
+ * calls `.generate(args)`. Tests inject a fake of this shape via
+ * `TtsDeps.inworld` without having to construct a real SDK instance.
+ */
+export interface InworldTtsLike {
+  generate(args: {
+    text: string;
+    voice: string;
+    model: string;
+    encoding: 'OGG_OPUS' | 'MP3' | 'LINEAR16';
+    outputFile?: string;
+    speed?: number;
+    temperature?: number;
+  }): Promise<Uint8Array>;
+}
+
+/**
+ * Dependency seams. The only IO boundary in this module is the Inworld SDK
+ * client; tests pass in a fake `InworldTtsLike` to avoid network calls and
+ * env-var setup.
  */
 export interface TtsDeps {
-  fetch?: typeof fetch;
-  spawn?: typeof realSpawn | ((cmd: string, args: string[]) => ChildProcessWithoutNullStreams);
+  inworld?: InworldTtsLike;
 }
 
 export interface TtsOptions {
@@ -1301,103 +1257,53 @@ export interface TtsOptions {
   output: string;
   /** Inworld API key. Defaults to `process.env.INWORLD_API_KEY`. */
   apiKey?: string;
-  /** Per-request speed; passed through to Inworld if set. */
+  /** Per-request speed; passed through to the SDK if set. */
   speed?: number;
-  /** Per-request temperature; passed through to Inworld if set. */
+  /** Per-request temperature; passed through to the SDK if set. */
   temperature?: number;
   deps?: TtsDeps;
 }
 
 /**
- * Render `text` to an OGG Opus file at `options.output` via Inworld TTS v2
- * (returns the absolute path on success). Two-stage pipeline:
+ * Render `text` to an OGG Opus file at `options.output` via the
+ * `@inworld/tts` SDK (model `inworld-tts-2`, encoding `OGG_OPUS`).
  *
- *  1. POST text → Inworld → base64 MP3 audio.
- *  2. Pipe MP3 → ffmpeg → OGG Opus at `options.output`.
- *
- * Throws on Inworld non-200, on JSON shape mismatch, or on ffmpeg failure.
- * Mirrors OpenClaw `inworld-tts/scripts/tts.sh`.
+ * The SDK returns OGG bytes natively — no MP3 intermediate, no ffmpeg.
+ * Throws on missing API key, on SDK errors (network, auth, quota), or on
+ * filesystem failures.
  */
 export async function ttsRender(text: string, options: TtsOptions): Promise<string> {
-  const apiKey = options.apiKey ?? process.env.INWORLD_API_KEY;
-  if (!apiKey) {
-    throw new Error('ttsRender: missing INWORLD_API_KEY (pass apiKey or set env var)');
-  }
+  // Default-injecting the real client requires the env var (or an
+  // explicit apiKey). If the caller provides `deps.inworld`, they own
+  // auth — we never read INWORLD_API_KEY in that case.
+  const inworld = options.deps?.inworld ?? defaultClient(options.apiKey);
   const voice = options.voice ?? 'Hank';
-  const fetchFn = options.deps?.fetch ?? fetch;
-  const spawnFn = options.deps?.spawn ?? realSpawn;
 
-  // 1) Inworld → base64 MP3 bytes.
-  const body: Record<string, unknown> = {
-    voiceId: voice,
-    modelId: INWORLD_MODEL,
-    text,
-  };
-  if (typeof options.speed === 'number') body.speed = options.speed;
-  if (typeof options.temperature === 'number') body.temperature = options.temperature;
-
-  const res = await fetchFn(INWORLD_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await safeText(res);
-    throw new Error(`ttsRender: Inworld returned HTTP ${res.status}: ${detail.slice(0, 200)}`);
-  }
-  const json = (await res.json()) as { audioContent?: string };
-  if (typeof json.audioContent !== 'string' || json.audioContent.length === 0) {
-    throw new Error('ttsRender: Inworld response missing audioContent');
-  }
-  const mp3 = Buffer.from(json.audioContent, 'base64');
-
-  // 2) Pipe through ffmpeg → OGG Opus at options.output.
   await fs.mkdir(path.dirname(options.output), { recursive: true });
-  await pipeThroughFfmpeg(mp3, options.output, spawnFn);
+
+  const args: Parameters<InworldTtsLike['generate']>[0] = {
+    text,
+    voice,
+    model: INWORLD_MODEL,
+    encoding: DEFAULT_ENCODING,
+  };
+  if (typeof options.speed === 'number') args.speed = options.speed;
+  if (typeof options.temperature === 'number') args.temperature = options.temperature;
+
+  const bytes = await inworld.generate(args);
+  await fs.writeFile(options.output, Buffer.from(bytes));
   return options.output;
 }
 
-async function pipeThroughFfmpeg(
-  mp3: Buffer,
-  outputPath: string,
-  spawnFn: NonNullable<TtsDeps['spawn']>,
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawnFn('ffmpeg', [
-      '-y',
-      '-loglevel',
-      'error',
-      '-i',
-      '-',
-      '-c:a',
-      'libopus',
-      '-b:a',
-      '64k',
-      outputPath,
-    ]) as ChildProcessWithoutNullStreams;
-
-    let stderr = '';
-    child.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ttsRender: ffmpeg exited ${code}: ${stderr.slice(0, 200)}`));
-    });
-    child.on('error', (err) => reject(err));
-    child.stdin.end(mp3);
-  });
-}
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '';
+function defaultClient(apiKey?: string): InworldTtsLike {
+  const key = apiKey ?? process.env.INWORLD_API_KEY;
+  if (!key) {
+    throw new Error('ttsRender: missing INWORLD_API_KEY (pass apiKey or set env var)');
   }
+  // The SDK accepts `{ apiKey }` or reads INWORLD_API_KEY from env on its own.
+  // Casting through `unknown` because the SDK's TS surface and our minimal
+  // `InworldTtsLike` may differ on optional fields (`outputFile`, `kill`, …).
+  return InworldTTS({ apiKey: key }) as unknown as InworldTtsLike;
 }
 ```
 
@@ -1422,64 +1328,68 @@ Expected: the live-smoke test passes, producing a non-empty `.ogg` in a tmp dir.
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add src/lib/media/tts.ts src/lib/media/tts.test.ts
+git add package.json pnpm-lock.yaml src/lib/media/tts.ts src/lib/media/tts.test.ts
 git commit -m "$(cat <<'EOF'
-feat(media): Inworld TTS v2 → mp3 → ffmpeg → ogg wrapper
+feat(media): @inworld/tts SDK wrapper with native OGG Opus output
 
-Adds src/lib/media/tts.ts. ttsRender POSTs to Inworld TTS v2 with
-{voiceId, modelId: inworld-tts-1.5-max, text, speed?, temperature?},
-base64-decodes the audioContent into an MP3 Buffer, and pipes it
-through `ffmpeg -i - -c:a libopus -b:a 64k <out.ogg>` to the requested
-output path. API key from option or process.env.INWORLD_API_KEY.
+Adds src/lib/media/tts.ts. ttsRender calls InworldTTS().generate({
+text, voice, model: 'inworld-tts-2', encoding: 'OGG_OPUS' }) from the
+official @inworld/tts SDK and writes the returned Uint8Array to the
+requested output path. API key from option or process.env.INWORLD_API_KEY
+(or pre-configured on an injected client).
 
-Dependency seams (TtsDeps.fetch, TtsDeps.spawn) let unit tests stub
-network + child process without monkey-patching globals. One live-smoke
-test guarded on the env var per spec exit criterion line 543.
+The SDK returns native OGG bytes — no MP3 intermediate, no ffmpeg
+shell-out, no spawn. Dependency seam (TtsDeps.inworld) lets unit tests
+inject a fake InworldTtsLike. One live-smoke test guarded on
+INWORLD_API_KEY per spec exit criterion line 543.
 
-Mirrors OpenClaw inworld-tts/scripts/tts.sh.
+Adds @inworld/tts to dependencies.
 EOF
 )"
 ```
 
 ---
 
-## Task 4: `media/image.ts` — gpt-image-1 wrapper with collision-proof filenames
+## Task 4: `media/image.ts` — `openai` SDK wrapper for `gpt-image-2` with collision-proof filenames
 
 Spec lines 538–545:
 
 - Concurrency invariant §4 (lines 366–367): filename pattern `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png`. The 6 hex chars are sourced from `crypto.randomBytes(3).toString('hex')` (3 bytes = exactly 6 hex chars = **24 bits** of entropy ≈ 1 in 16.7 million collision rate per slug-second — comfortably below the parallel-illustrator fan-out cardinality of a handful of images per turn).
 - Image is written under `<vaultRoot>/images/`. The directory is created if missing.
-- `gpt-image-1` returns base64; we decode and write the bytes.
+- `gpt-image-2` returns base64 in `result.data[0].b64_json`; we decode and write the bytes.
 
-We export `buildFilename` separately so the filename pattern can be unit-tested without round-tripping the network. The actual network call goes to `https://api.openai.com/v1/images/generations` with `model: 'gpt-image-1'`, `prompt`, `n: 1`, `size`, `quality`. **Do not send `response_format`** — `gpt-image-1` rejects the parameter and always returns `b64_json` by default (Task 4 Step 0 below verifies this via ctx7). No new `openai` SDK dep — `fetch` is sufficient for this single endpoint.
+We export `buildFilename` separately so the filename pattern can be unit-tested without round-tripping the network. The actual API call goes through the official `openai` Node SDK: `client.images.generate({ model: 'gpt-image-2', prompt, quality: 'high', size, n: 1 })`. The `OpenAI` client constructor is injectable via `ImageDeps.openai` so unit tests can pass in a fake without monkey-patching the SDK.
 
 **Files:**
 
 - Create: `src/lib/media/image.ts`
 - Test: `src/lib/media/image.test.ts`
 
-- [ ] **Step 0: Verify the OpenAI `gpt-image-1` request shape via ctx7 BEFORE writing any code.**
-
-`gpt-image-2` does not exist as a published OpenAI model name — the released image model is `gpt-image-1`. The exact accepted parameter set has shifted between the legacy `dall-e-3` shape and `gpt-image-1`, so the only safe move is to consult the live OpenAI docs at implementation time rather than trust the OpenClaw reference verbatim.
+- [ ] **Step 0: Add the `openai` dependency and verify the SDK surface via ctx7.**
 
 ```bash
-npx ctx7@latest library OpenAI
-# Pick the OpenAI library id from the output (e.g. `/openai/openai-node` or similar).
-npx ctx7@latest docs <libraryId> "gpt-image-1 image generation API request body parameters and response shape"
+# Add the dependency (uses pnpm per project convention).
+pnpm add openai
+
+# Verify the current SDK surface for client.images.generate. The model id
+# `gpt-image-2` and the default quality `'high'` are FIXED by user fiat for
+# this wave — do NOT use ctx7 to re-litigate the model name (prior reviewer
+# rounds insisted on `gpt-image-1`; the human owner has corrected this and
+# `gpt-image-2` is the target). Use ctx7 only to confirm the argument keys
+# and the response field name.
+npx ctx7@latest library "OpenAI Node"
+# Pick the openai library id from the output (e.g. `/openai/openai-node`).
+npx ctx7@latest docs <libraryId> "client.images.generate arguments: model, prompt, n, size, quality, and response field b64_json"
 ```
 
-Paste the verified shape into this section of the plan (replacing the block below) before writing the failing test in Step 1:
+The user-fixed parameters are:
 
-> **Verified `gpt-image-1` shape (fill in after ctx7):**
->
-> - Endpoint: `POST https://api.openai.com/v1/images/generations`
-> - Auth header: `Authorization: Bearer <key>`
-> - Body fields: `model: 'gpt-image-1'`, `prompt: string`, `n: 1`, `size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto'`, `quality: 'low' | 'medium' | 'high' | 'auto'`. **Do not send `response_format`** — `gpt-image-1` rejects it and always returns `b64_json` by default.
-> - Response shape: `{ data: [{ b64_json: string }] }` (no `url` field by default for `gpt-image-1`).
->
-> If ctx7 reports any deviation from the above (e.g. `quality: 'medium'` is renamed, an extra mandatory field, a new auth-header form), update this section AND the implementation in Step 3 before continuing.
+- **Model id:** `gpt-image-2` (NOT `gpt-image-1`). Do not change.
+- **Quality default:** `'high'` (NOT `'medium'`).
+- **Size default:** `'1024x1024'`.
+- **Auth:** the SDK reads `OPENAI_API_KEY` from the environment by default; an `{ apiKey }` constructor argument is also accepted.
 
-This step is gated: do not proceed to Step 1 until the verified shape has been pasted in and matches the implementation in Step 3. Task 4 completion (Step 5) is gated on a successful live smoke against the verified model name — if the live smoke 400s on a parameter shape mismatch, treat that as the verification having failed and re-run Step 0.
+If ctx7 reports a renamed argument (e.g. `quality` → `quality_tier`) or a different result-field name (e.g. `b64_json` → `image_b64`), update Step 1 and Step 3 accordingly before continuing. The live-smoke test (Step 5) will surface any remaining mismatch as an SDK exception.
 
 - [ ] **Step 1: Write the failing test.**
 
@@ -1489,22 +1399,25 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { generateImage, buildFilename, type ImageDeps } from './image';
+import { generateImage, buildFilename, type ImageDeps, type OpenAILike } from './image';
 
 const SAMPLE_B64 = Buffer.from('fake-png-bytes').toString('base64');
 
-function makeFakeFetch(status = 200, body: unknown = { data: [{ b64_json: SAMPLE_B64 }] }) {
-  return vi.fn(async (url: string, init: RequestInit) => {
-    void url;
-    void init;
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      statusText: status === 200 ? 'OK' : 'Bad',
-      json: async () => body,
-      text: async () => JSON.stringify(body),
-    } as unknown as Response;
+/**
+ * Fake OpenAI-shaped client. `generateImage` only ever calls
+ * `client.images.generate(args)` and expects `{ data: [{ b64_json }] }` back,
+ * so we don't have to mirror the full SDK surface — only `images.generate`.
+ */
+function makeFakeOpenAI(
+  body: { data?: Array<{ b64_json?: string }> } | Error = {
+    data: [{ b64_json: SAMPLE_B64 }],
+  },
+): OpenAILike & { images: { generate: ReturnType<typeof vi.fn> } } {
+  const generate = vi.fn(async (_args: Record<string, unknown>) => {
+    if (body instanceof Error) throw body;
+    return body;
   });
+  return { images: { generate } };
 }
 
 async function tmpVault(): Promise<string> {
@@ -1537,10 +1450,10 @@ describe('buildFilename', () => {
 });
 
 describe('generateImage', () => {
-  it('POSTs to the OpenAI image endpoint with the right body', async () => {
-    const fetchFn = makeFakeFetch();
+  it('calls client.images.generate with model=gpt-image-2 + quality=high + n=1', async () => {
+    const openai = makeFakeOpenAI();
     const vaultRoot = await tmpVault();
-    const deps: ImageDeps = { fetch: fetchFn as unknown as typeof fetch };
+    const deps: ImageDeps = { openai };
     await generateImage({
       prompt: 'Kessha at the helm',
       slug: 'kessha-helm',
@@ -1548,26 +1461,19 @@ describe('generateImage', () => {
       apiKey: 'sk-test',
       deps,
     });
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe('https://api.openai.com/v1/images/generations');
-    expect(init.method).toBe('POST');
-    const headers = init.headers as Record<string, string>;
-    expect(headers['Authorization']).toBe('Bearer sk-test');
-    const body = JSON.parse(init.body as string);
-    expect(body.model).toBe('gpt-image-1');
-    expect(body.prompt).toBe('Kessha at the helm');
-    expect(body.n).toBe(1);
-    // gpt-image-1 always returns b64_json by default and REJECTS the
-    // `response_format` parameter. Assert we don't send it.
-    expect(body.response_format).toBeUndefined();
-    expect(body.quality).toBe('medium');
+    expect(openai.images.generate).toHaveBeenCalledTimes(1);
+    const args = openai.images.generate.mock.calls[0][0] as Record<string, unknown>;
+    expect(args.model).toBe('gpt-image-2');
+    expect(args.prompt).toBe('Kessha at the helm');
+    expect(args.n).toBe(1);
+    expect(args.quality).toBe('high');
+    expect(args.size).toBe('1024x1024');
   });
 
   it('writes the PNG under <vaultRoot>/images/ with the documented filename pattern', async () => {
-    const fetchFn = makeFakeFetch();
+    const openai = makeFakeOpenAI();
     const vaultRoot = await tmpVault();
-    const deps: ImageDeps = { fetch: fetchFn as unknown as typeof fetch };
+    const deps: ImageDeps = { openai };
     const res = await generateImage({
       prompt: 'p',
       slug: 'kessha',
@@ -1584,25 +1490,25 @@ describe('generateImage', () => {
   });
 
   it('creates the <vaultRoot>/images/ directory if missing', async () => {
-    const fetchFn = makeFakeFetch();
+    const openai = makeFakeOpenAI();
     const vaultRoot = await tmpVault();
     // do NOT pre-create images/
-    const deps: ImageDeps = { fetch: fetchFn as unknown as typeof fetch };
+    const deps: ImageDeps = { openai };
     await generateImage({ prompt: 'p', slug: 's', vaultRoot, apiKey: 'k', deps });
     const dirStat = await fs.stat(path.join(vaultRoot, 'images'));
     expect(dirStat.isDirectory()).toBe(true);
   });
 
-  it('throws on a non-200 OpenAI response with the status code in the message', async () => {
-    const fetchFn = makeFakeFetch(429, { error: { message: 'rate limited' } });
+  it('surfaces SDK errors (e.g. 429 rate-limit) as a thrown error', async () => {
+    const openai = makeFakeOpenAI(new Error('429 rate limited'));
     const vaultRoot = await tmpVault();
-    const deps: ImageDeps = { fetch: fetchFn as unknown as typeof fetch };
+    const deps: ImageDeps = { openai };
     await expect(
       generateImage({ prompt: 'p', slug: 's', vaultRoot, apiKey: 'k', deps }),
     ).rejects.toThrow(/429/);
   });
 
-  it('throws when api key is missing (no apiKey arg + no env var)', async () => {
+  it('throws when api key is missing (no apiKey arg + no env var + no injected client)', async () => {
     const prev = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     const vaultRoot = await tmpVault();
@@ -1615,20 +1521,36 @@ describe('generateImage', () => {
     }
   });
 
-  it('throws when the response lacks b64_json', async () => {
-    const fetchFn = makeFakeFetch(200, { data: [{}] });
+  it('throws when the SDK response lacks b64_json', async () => {
+    const openai = makeFakeOpenAI({ data: [{}] });
     const vaultRoot = await tmpVault();
-    const deps: ImageDeps = { fetch: fetchFn as unknown as typeof fetch };
+    const deps: ImageDeps = { openai };
     await expect(
       generateImage({ prompt: 'p', slug: 's', vaultRoot, apiKey: 'k', deps }),
     ).rejects.toThrow(/b64_json/);
+  });
+
+  it('honors a caller-provided quality override (still defaults to high otherwise)', async () => {
+    const openai = makeFakeOpenAI();
+    const vaultRoot = await tmpVault();
+    const deps: ImageDeps = { openai };
+    await generateImage({
+      prompt: 'p',
+      slug: 's',
+      vaultRoot,
+      apiKey: 'k',
+      quality: 'low',
+      deps,
+    });
+    const args = openai.images.generate.mock.calls[0][0] as Record<string, unknown>;
+    expect(args.quality).toBe('low');
   });
 });
 
 // Live smoke — gated on env var presence. Spec exit criterion line 544.
 // Run manually with `OPENAI_API_KEY=... pnpm test src/lib/media/image.test.ts`.
 describe.runIf(!!process.env.OPENAI_API_KEY)('generateImage — live smoke', () => {
-  it('writes a .png under vaults/commodore-vex/images/', async () => {
+  it('writes a .png under vaults/commodore-vex/images/ via gpt-image-2', async () => {
     const vaultRoot = path.join(process.cwd(), 'vaults', 'commodore-vex');
     // Smoke into a tmpdir if the symlink target is read-only or absent; spec
     // line 544 names commodore-vex but we don't depend on it for correctness.
@@ -1669,15 +1591,32 @@ Expected: FAIL with `Cannot find module './image'`.
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import OpenAI from 'openai';
 import type { ImageMeta } from '../schemas';
 
-const OPENAI_URL = 'https://api.openai.com/v1/images/generations';
-const OPENAI_MODEL = 'gpt-image-1';
+const OPENAI_MODEL = 'gpt-image-2';
 const DEFAULT_SIZE = '1024x1024';
-const DEFAULT_QUALITY = 'medium';
+const DEFAULT_QUALITY = 'high';
+
+/**
+ * Minimal structural type for the `openai` client. `generateImage` only
+ * calls `client.images.generate(args)`. Tests inject a fake of this shape
+ * via `ImageDeps.openai` without instantiating the real SDK.
+ */
+export interface OpenAILike {
+  images: {
+    generate(args: {
+      model: string;
+      prompt: string;
+      n: number;
+      size: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
+      quality: 'low' | 'medium' | 'high' | 'auto';
+    }): Promise<{ data?: Array<{ b64_json?: string }> }>;
+  };
+}
 
 export interface ImageDeps {
-  fetch?: typeof fetch;
+  openai?: OpenAILike;
 }
 
 export interface GenerateImageInput {
@@ -1690,54 +1629,38 @@ export interface GenerateImageInput {
   apiKey?: string;
   /** OpenAI image size; default `'1024x1024'`. */
   size?: '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
-  /** OpenAI image quality; default `'medium'`. */
+  /** OpenAI image quality; default `'high'`. */
   quality?: 'low' | 'medium' | 'high' | 'auto';
   deps?: ImageDeps;
 }
 
 /**
- * Generate an image via OpenAI `gpt-image-1` and write the PNG into
+ * Generate an image via OpenAI `gpt-image-2` (default quality `'high'`) and
+ * write the PNG into
  * `<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png`.
  * Returns the `ImageMeta` record matching `src/lib/schemas.ts`.
  *
- * Concurrency invariant §4: the 6-char random suffix prevents
- * same-second collisions across parallel image-tool calls.
+ * Concurrency invariant §4: the 6-char random suffix prevents same-second
+ * collisions across parallel image-tool calls.
  *
- * Network IO is the only side effect (besides the file write); inject
- * `deps.fetch` to stub it in tests.
+ * The SDK client is the only IO seam; inject `deps.openai` to stub it in
+ * tests. Auth is handled by the SDK — pass `apiKey` or set
+ * `OPENAI_API_KEY`; the SDK retries/backs-off internally on 5xx.
  */
 export async function generateImage(input: GenerateImageInput): Promise<ImageMeta> {
-  const apiKey = input.apiKey ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('generateImage: missing OPENAI_API_KEY (pass apiKey or set env var)');
-  }
-  const fetchFn = input.deps?.fetch ?? fetch;
+  const openai = input.deps?.openai ?? defaultClient(input.apiKey);
   const size = input.size ?? DEFAULT_SIZE;
   const quality = input.quality ?? DEFAULT_QUALITY;
 
-  const res = await fetchFn(OPENAI_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      prompt: input.prompt,
-      n: 1,
-      size,
-      quality,
-    }),
-    // gpt-image-1 always returns b64_json — `response_format` is rejected
-    // as a request parameter (verified via ctx7 in Task 4 Step 0). Do not
-    // re-add it.
+  const result = await openai.images.generate({
+    model: OPENAI_MODEL,
+    prompt: input.prompt,
+    n: 1,
+    size,
+    quality,
   });
-  if (!res.ok) {
-    const detail = await safeText(res);
-    throw new Error(`generateImage: OpenAI returned HTTP ${res.status}: ${detail.slice(0, 200)}`);
-  }
-  const json = (await res.json()) as { data?: Array<{ b64_json?: string }> };
-  const b64 = json.data?.[0]?.b64_json;
+
+  const b64 = result.data?.[0]?.b64_json;
   if (typeof b64 !== 'string' || b64.length === 0) {
     throw new Error('generateImage: OpenAI response missing data[0].b64_json');
   }
@@ -1754,6 +1677,16 @@ export async function generateImage(input: GenerateImageInput): Promise<ImageMet
     prompt: input.prompt,
     slug: input.slug,
   };
+}
+
+function defaultClient(apiKey?: string): OpenAILike {
+  const key = apiKey ?? process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error('generateImage: missing OPENAI_API_KEY (pass apiKey or set env var)');
+  }
+  // Cast through `unknown` because the SDK's actual `images.generate` return
+  // type carries more fields than our minimal `OpenAILike`.
+  return new OpenAI({ apiKey: key }) as unknown as OpenAILike;
 }
 
 export interface BuildFilenameOptions {
@@ -1797,14 +1730,6 @@ function slugify(s: string): string {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
-
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return '';
-  }
-}
 ```
 
 - [ ] **Step 4: Run the test to verify it passes.**
@@ -1813,7 +1738,7 @@ async function safeText(res: Response): Promise<string> {
 pnpm test --run src/lib/media/image.test.ts
 ```
 
-Expected: all 11 unit tests PASS. The live-smoke `describe.runIf` is skipped unless `OPENAI_API_KEY` is set.
+Expected: all 11 unit tests PASS (4 `buildFilename` tests + 7 `generateImage` tests). The live-smoke `describe.runIf` is skipped unless `OPENAI_API_KEY` is set.
 
 - [ ] **Step 5: Run the live smoke (spec exit criterion).**
 
@@ -1828,27 +1753,27 @@ Expected: live-smoke passes and a `.png` lands under `vaults/commodore-vex/image
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add src/lib/media/image.ts src/lib/media/image.test.ts
+git add package.json pnpm-lock.yaml src/lib/media/image.ts src/lib/media/image.test.ts
 git commit -m "$(cat <<'EOF'
-feat(media): gpt-image-1 wrapper with collision-proof PNG filenames
+feat(media): openai SDK wrapper for gpt-image-2 with quality=high
 
-Adds src/lib/media/image.ts. generateImage POSTs to OpenAI
-/v1/images/generations with {model: gpt-image-1, prompt, n: 1, size,
-quality}, base64-decodes data[0].b64_json (gpt-image-1 returns it by
-default and rejects `response_format` as a request param), writes the
-PNG under <vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png,
+Adds src/lib/media/image.ts. generateImage calls
+client.images.generate({ model: 'gpt-image-2', prompt, n: 1, size,
+quality: 'high' }) from the official openai Node SDK,
+base64-decodes data[0].b64_json, writes the PNG under
+<vaultRoot>/images/<YYYYMMDD>-<HHMMSS>-<slug>-<6char-rand>.png,
 returns ImageMeta {filename, path, prompt, slug}.
 
-buildFilename is exported separately so the filename pattern can be
-unit-tested. Concurrency invariant §4: 6-char random suffix prevents
-same-second collisions during parallel image-tool fan-out.
+Model id (`gpt-image-2`) and default quality (`'high'`) are fixed by
+user fiat for this wave — overrides any earlier `gpt-image-1` /
+`'medium'` references in spec or OpenClaw scripts. buildFilename is
+exported separately so the filename pattern can be unit-tested.
+Concurrency invariant §4: 6-char random suffix prevents same-second
+collisions during parallel image-tool fan-out.
 
-Dependency seam (ImageDeps.fetch) lets unit tests stub the network
-without monkey-patching globals. One live-smoke test guarded on
-OPENAI_API_KEY per spec exit criterion line 544.
-
-Mirrors OpenClaw rpg-image/scripts/image.py (the filename pattern adds
-the 6-char suffix per concurrency invariant §4).
+Dependency seam (ImageDeps.openai) lets unit tests inject a fake
+OpenAILike. One live-smoke test guarded on OPENAI_API_KEY per spec
+exit criterion line 544. Adds `openai` to dependencies.
 EOF
 )"
 ```
@@ -1941,17 +1866,17 @@ These are documented inline in the task preambles, but consolidated here for the
 
 2. **`extractVisualBlock` regex on EOF-without-newline.** Markdown files that end mid-line (no trailing `\n`) need the regex's tail to cope. We use `(?=\n## |$(?![\s\S]))` with the `m` flag — the negative-lookahead `(?![\s\S])` after `$` pins the anchor to true end-of-input (no characters of any kind may follow), which is the JavaScript equivalent of Python's `\Z` (which is NOT a valid JS regex token — an earlier draft used it and would have thrown `SyntaxError: Invalid escape` at module load). The `(?![\s\S])` clamp is load-bearing: a plain `$` under the `m` flag would also match at every internal line break, causing the lazy `[\s\S]*?` to stop at the first `\n` and truncate multi-line blocks. The leading `^## Visual` anchor still benefits from `m`-mode (so the heading is matched on its own line). Verified in Node against the reviewer-cited tests: "First block.\nSecond line.", "Only block.\nMultiple lines.", and "Fixture single sentence." all return their full bodies under the corrected regex (also verified by Task 2's "captures up to EOF" and "captures up to the next ## heading" tests).
 
-3. **OpenAI `gpt-image-1` request/response shape.** `gpt-image-1` is the canonical published model name (the OpenClaw scripts and an earlier draft of this plan referenced `gpt-image-2`, which is not a real model). `gpt-image-1` REJECTS `response_format` as a request parameter and always returns `b64_json` by default. Task 4 Step 0 calls ctx7 to verify the exact request body and response shape before any code is written. Task 4's live-smoke gate (Step 5) will surface any remaining mismatch as a 400/4xx and force a Step 0 re-run.
+3. **OpenAI `gpt-image-2` model id (FIXED by user fiat).** The user has corrected three prior reviewer rounds that insisted on `gpt-image-1`; the canonical target for this wave is `gpt-image-2` with default quality `'high'`. Do NOT re-litigate this via ctx7 — Task 4 Step 0's ctx7 call is scoped to verifying the _argument shape_ (`size`, `quality`, response `b64_json` field), not the model name. Task 4's live-smoke gate (Step 5) will surface any argument-shape mismatch as an SDK exception; a model-name 4xx from the SDK is treated as a fixture/environment problem (e.g. the API key lacks `gpt-image-2` access), NOT a license to revert to `gpt-image-1`.
 
-4. **Inworld TTS model id `inworld-tts-1.5-max`.** Spec line 323 says "to be verified against Inworld docs at implementation time". If the production model id has changed to e.g. `inworld-tts-2.0`, update `INWORLD_MODEL` in `media/tts.ts` — the rest of the wrapper (URL, header, body shape) is unchanged. The live-smoke test will surface a stale model id as a 4xx error.
+4. **Inworld TTS model id `inworld-tts-2` (FIXED by user fiat).** The spec was authored before TTS-2 existed and references `inworld-tts-1.5-max`; the user has confirmed `inworld-tts-2` is the current generation. Do NOT revert via ctx7. The `@inworld/tts` SDK call is `InworldTTS().generate({ ..., model: 'inworld-tts-2', encoding: 'OGG_OPUS' })`. The live-smoke test will surface a stale model id as an SDK exception.
 
 5. **`buildFilename` UTC vs local time.** We use UTC to keep filenames deterministic across machines and CI. The fixture image filenames in `commodore-vex/images/` (e.g. `2026-04-26-18-25-11-pyre-conclave.png`) are local-time and dash-separated; our pattern is UTC and uses no dashes between date and time fields (`YYYYMMDD-HHMMSS`). This matches the spec's exact wording (line 367: `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png`); the legacy local-time filenames are leftover from OpenClaw's pre-collision-suffix era and need no migration.
 
-6. **`fetch` in Node 22.** Global `fetch` is stable in Node 22.13+ (the project's minimum). No polyfill needed. The dependency seam (`deps.fetch`) keeps tests deterministic regardless.
+6. **SDK retries and rate-limits.** Both `@inworld/tts` and the `openai` SDK handle 5xx retries / exponential backoff internally — the wrappers don't add their own retry logic. Risk #6 in earlier revisions was about raw `fetch` in Node 22; with the SDK move it's a non-issue here. If a future incident reveals the SDKs' defaults are too aggressive or too slow, tune via the SDK constructor options (not by replacing the SDK with raw `fetch`).
 
-7. **Test isolation when running coverage with stubbed `fetch`.** vitest's `vi.fn()` is per-test scope by default. We pass the mock in via `deps`, so there is no global mutation; concurrent test files cannot contaminate each other.
+7. **Test isolation.** vitest's `vi.fn()` is per-test scope by default. We pass the mock client in via `deps`, so there is no global mutation; concurrent test files cannot contaminate each other.
 
-8. **`ffmpeg` spawn on Windows.** Out-of-scope per spec line 425 ("Cross-platform paths (macOS only for v0)"). The spawn call uses array-form args, which is safe on POSIX. No Windows-specific code paths.
+8. **`ffmpeg` dropped from Wave 3.** The legacy mp3→ffmpeg→ogg pipeline is gone — `@inworld/tts` returns OGG bytes natively via `encoding: 'OGG_OPUS'`. No `spawn`, no child process, no `ChildProcessWithoutNullStreams` fakes. Whether ffmpeg is needed elsewhere (waves 5–6, browser-side decoding, etc.) is out of scope for Wave 3.
 
 ---
 
@@ -1962,13 +1887,13 @@ These were applied while writing the plan; they're listed here so a reviewer (or
 1. **Spec coverage — every row of the Wave 3 LOC table has a corresponding task:**
    - `src/lib/schemas.ts` (`FactionOutput`, `NarratorOutput`, `IllustratorOutput`, `ImageMeta`) → **Task 1**.
    - `src/lib/dossier.ts` (3 builders + `identifyOnStage` + `extractVisualBlock`) → **Task 2**.
-   - `src/lib/media/tts.ts` (Inworld TTS 2 → mp3 → ffmpeg → ogg) → **Task 3**.
-   - `src/lib/media/image.ts` (gpt-image-1 wrapper, filename pattern with random suffix) → **Task 4**.
+   - `src/lib/media/tts.ts` (`@inworld/tts` SDK, model `inworld-tts-2`, native `OGG_OPUS` encoding) → **Task 3**.
+   - `src/lib/media/image.ts` (`openai` SDK, model `gpt-image-2`, default quality `'high'`, filename pattern with random suffix) → **Task 4**.
 
 2. **Spec exit criteria — every Wave 3 exit criterion in the spec (lines 540–545) maps to a task:**
    - "Dossier builders are pure functions; snapshot tests pass against fixture vault." → **Task 2** Steps 1, 3 (test asserts pure functions + reads `tests/fixtures/test-vault/style-guide.md`).
-   - "`tts.ts` produces a non-empty `.ogg` for 'hello world' (live test, but design it so unit tests can stub)." → **Task 3** Step 1 (live-smoke test gated on `INWORLD_API_KEY`; unit tests cover the stubbable seams via `TtsDeps`).
-   - "`media/image.ts` writes a `.png` to `vaults/commodore-vex/images/` (live test, stubbable)." → **Task 4** Step 1 (live-smoke test gated on `OPENAI_API_KEY`; unit tests cover the stubbable seam via `ImageDeps`).
+   - "`tts.ts` produces a non-empty `.ogg` for 'hello world' (live test, but design it so unit tests can stub)." → **Task 3** Step 1 (live-smoke test gated on `INWORLD_API_KEY`; unit tests cover the stubbable seam via `TtsDeps.inworld`, a fake `InworldTtsLike`).
+   - "`media/image.ts` writes a `.png` to `vaults/commodore-vex/images/` (live test, stubbable)." → **Task 4** Step 1 (live-smoke test gated on `OPENAI_API_KEY`; unit tests cover the stubbable seam via `ImageDeps.openai`, a fake `OpenAILike`).
    - "Filename collisions impossible: `YYYYMMDD-HHMMSS-<slug>-<6char-rand>.png`." → **Task 4** Step 1 (three `buildFilename` tests assert pattern, suffix uniqueness, slug normalization).
 
 3. **Schemas shape verbatim with spec lines 143–172:**
@@ -1985,36 +1910,36 @@ These were applied while writing the plan; they're listed here so a reviewer (or
    - `JournalEntry` imported from `./vault/journal` (Wave 2) — not redefined.
    - `EntityDoc` imported from `./vault/entities` (Wave 1) — not redefined.
    - `WorldView`, `CharacterView`, `ThreadView` imported from `./vault/xml` (Wave 1) — not redefined.
-   - `TtsDeps.fetch` and `ImageDeps.fetch` both use the same `typeof fetch` signature.
+   - `TtsDeps.inworld` and `ImageDeps.openai` are both structural-type seams (`InworldTtsLike`, `OpenAILike`) covering only the SDK methods the wrappers actually call — no raw `fetch` is exposed in either deps interface.
    - `ttsRender` returns `Promise<string>` (the output path); `generateImage` returns `Promise<ImageMeta>` (per the spec the per-image record is `ImageMeta`, while the per-call audio is just its path).
 
-6. **Reference verbatim.** OpenClaw scripts consulted:
-   - `inworld-tts/scripts/tts.sh` lines 80–102 — URL, modelId, request body, MP3 + ffmpeg pipeline.
+6. **Reference verbatim.** OpenClaw scripts consulted (historical only — Wave 3 ships against the current SDKs and user-fixed model ids):
+   - `inworld-tts/scripts/tts.sh` lines 80–102 — historical URL / modelId / body. Wave 3 supersedes with `@inworld/tts` SDK + `inworld-tts-2` + native `OGG_OPUS`.
    - `rpg-image/scripts/image.py` lines 45, 55–62 — `_VISUAL_RE`, random_slug, build_filename. Our `buildFilename` adds the 6-char random suffix per spec §4 (a deliberate delta from OpenClaw, which only used 4 chars without a time-stamp-collision concern).
-   - `gpt-image-1/scripts/generate_image.py` lines 47–66 — `client.images.generate({ model, prompt, quality, size, n: 1 })` returning `data[0].b64_json`.
+   - `gpt-image-1/scripts/generate_image.py` lines 47–66 — historical reference for `client.images.generate({ model, prompt, quality, size, n: 1 })`. Wave 3 supersedes with `openai` SDK + `gpt-image-2` + `quality: 'high'`.
 
-7. **Boundary contract — Wave 3 stays inside `src/lib/`:**
+7. **Boundary contract — Wave 3 stays inside `src/lib/` (+ two scoped package.json additions + one vitest.config.ts edit):**
    - No `src/mastra/` files touched.
    - No `src/app/` files touched.
-   - No imports from `mastra`, `@mastra/*`, or any provider SDK.
-   - No package.json edits (Zod and `gray-matter` are already present; `openai` and `inworld` SDKs are deliberately not added — we use `fetch`).
-   - Revision 1 widens this to a single `vitest.config.ts` edit (Task 5 Step 1) — that file is in repo-root, not under `src/`, and the change is config-only.
+   - No imports from `mastra` or `@mastra/*`.
+   - `package.json` gains exactly two new runtime deps: `@inworld/tts` and `openai`. The `@ai-sdk/openai` dep already in package.json is unrelated (it's the Vercel AI SDK's OpenAI provider, for waves 4–5 LLM calls).
+   - Revision 1 also widens the boundary to a single `vitest.config.ts` edit (Task 5 Step 1) — that file is in repo-root, not under `src/`, and the change is config-only.
 
 8. **Regex correctness — JS regex tokens only, no Python `\Z`:**
    - `VISUAL_RE` in `dossier.ts` Step 3 is `/^## Visual\s*\n([\s\S]*?)(?=\n## |$(?![\s\S]))/m` — uses `$(?![\s\S])` as the JS-equivalent of Python's `\Z` (true end-of-input), with `m` mode only for the leading `^## Visual` heading anchor. Verified in Node against three cases: `"## Visual\nFirst block.\nSecond line.\n## Other\nignored"` → `"First block.\nSecond line."`; `"## Visual\nOnly block.\nMultiple lines."` → `"Only block.\nMultiple lines."`; `"## Visual\nFixture single sentence."` → `"Fixture single sentence."`. An earlier revision used a plain `$` here, which incorrectly matched at every internal `\n` and truncated multi-line blocks at the first line break — that regression is fixed by the negative-lookahead.
    - No other regex in the plan uses non-JS escapes.
 
-9. **External-API model names verified at implementation time:**
-   - **OpenAI image model = `gpt-image-1`** (NOT `gpt-image-2`, which doesn't exist as a published model). Task 4 Step 0 calls ctx7 to verify the exact request body shape before any code is written. `response_format` is NOT sent (gpt-image-1 rejects it). `quality: 'medium'` is documented as one of `'low' | 'medium' | 'high' | 'auto'`.
-   - **Inworld TTS v2 model id and auth scheme.** Task 3 Step 0 calls ctx7 to verify the model id (current OpenClaw uses `inworld-tts-1.5-max`, may have moved), the auth scheme (current uses `Authorization: Basic <key>`, may have moved to Bearer + token-exchange), and the response envelope (`{ audioContent }` vs `{ result: { audioContent } }`). Implementation in Step 3 is reconciled against the ctx7 output before tests are written.
-   - Both wrappers are gated on a successful live-smoke at their respective Task Step 5 — a 4xx from a stale model id forces a Step 0 re-run.
+9. **External-API model names — FIXED by user fiat for this wave:**
+   - **OpenAI image model = `gpt-image-2`** (NOT `gpt-image-1`; the human owner has corrected this three rounds in a row — do NOT revert). **Default quality = `'high'`** (NOT `'medium'`). Task 4 Step 0 uses ctx7 to verify the _argument shape_ of `client.images.generate` (size enum, quality enum, response field `b64_json`) but does NOT re-litigate the model name.
+   - **Inworld TTS model = `inworld-tts-2`** (NOT `inworld-tts-1.5-max`; the spec predates TTS-2). The `@inworld/tts` SDK handles auth from `INWORLD_API_KEY` env var or an `{ apiKey }` constructor arg — no manual Basic/Bearer header. The SDK returns native `OGG_OPUS` bytes via `encoding: 'OGG_OPUS'`, eliminating the legacy mp3→ffmpeg→ogg pipeline.
+   - Both wrappers are gated on a successful live-smoke at their respective Task Step 5 — an SDK exception from the live test triggers diagnosis (auth, network, model access), NOT a model-name revert.
 
 10. **Coverage gate scope covers the Wave 3 surface (not just `src/lib/vault/**`):\*\*
     - Task 5 Step 1 extends `vitest.config.ts` `coverage.include` to `['src/lib/vault/**/*.ts', 'src/lib/schemas.ts', 'src/lib/dossier.ts', 'src/lib/media/**/*.ts']` so the 80/80/80/80 threshold applies to schemas + dossier + media too.
     - The previous silent exclusion of Wave 3 files (revision 0) was a coverage-hygiene regression; this revision fixes it.
 
-11. **TS strictness on stubbed child-process seams.**
-    - `makeFakeSpawn()` and the inline non-zero-exit fake in `tts.test.ts` both cast `as unknown as ChildProcessWithoutNullStreams` rather than building a structurally-complete one. This is intentional: `ttsRender` only ever reaches for `child.stdin`, `child.stderr`, and the `'close'` / `'error'` events; fabricating a fake `stdout` / `pid` / `stdio` array on every test would add noise without adding coverage.
+11. **TS strictness on injected SDK seams.**
+    - `makeFakeInworld()` in `tts.test.ts` and `makeFakeOpenAI()` in `image.test.ts` both implement only the SDK method the wrapper actually calls (`generate` and `images.generate` respectively) — the public `InworldTtsLike` / `OpenAILike` structural types are intentionally narrower than the real SDK types so fakes don't have to mirror unused fields. The `defaultClient` factories in `tts.ts` and `image.ts` cast the real SDK instance through `unknown` because the wider SDK types carry fields outside our minimal interface; the cast is contained in one place per module and is the only `as unknown as` in production code.
 
 12. **Filename random-suffix entropy is correctly described.**
     - `buildFilename` uses `crypto.randomBytes(3).toString('hex')` — exactly 6 hex chars = 24 bits ≈ 1 in 16.7 million collisions per slug-second. The docstring and the risk register agree on this number (revision 0 claimed "36 bits ≈ 1 in 2 billion", which contradicted `randomBytes(4).toString('hex').slice(0, 6)` = 24 bits — fixed by switching to `randomBytes(3)` cleanly).
@@ -2029,4 +1954,5 @@ These were applied while writing the plan; they're listed here so a reviewer (or
 - Cleanup of `weather-agent` / `weather-workflow` — out-of-band cleanup per spec line 602.
 - The live `vaults/commodore-vex/` symlink target — the image live-smoke test writes there only if writable; otherwise it falls back to a tmp dir.
 - v0.5 features: alias resolution in `wikilinks.ts` (still folder-prefix-or-bust), discretionary off-stage faction spawns, per-NPC TTS voices, streaming TTS.
-- The `openai` Node SDK and any Inworld TypeScript client — we deliberately use `fetch` to avoid adding deps for a single endpoint each.
+- LLM calls (`generateObject` via the Vercel AI SDK) — those are Wave 4–5 work. Wave 3 produces the Zod schemas that consume them; it does NOT instantiate any LLM client. (See the "SDK choices" section near the top of the plan for the full split between OpenAI image SDK / Inworld TTS SDK / Vercel AI SDK responsibilities.)
+- ffmpeg shell-out — dropped from Wave 3 since `@inworld/tts` emits native OGG Opus. Whether ffmpeg returns in Wave 5/6 (browser-side decoding, alternate codecs) stays for those waves to decide.
