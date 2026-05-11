@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { readXml, writeXml, parseWorldXml, parseThreadsXml, parseCharacterXml } from './xml';
-import { worldXmlPath, threadsXmlPath, characterXmlPath } from './paths';
+import { worldXmlPath, threadsXmlPath } from './paths';
 
 const FIXTURE = 'tests/fixtures/test-vault';
 
@@ -80,6 +82,102 @@ describe('xml', () => {
     it('returns relationships array with slug + text', async () => {
       const character = await parseCharacterXml(FIXTURE);
       expect(character.relationships).toEqual([{ slug: 'kessha', text: 'first mate' }]);
+    });
+  });
+
+  describe('error and edge paths', () => {
+    it('parseWorldXml throws when <world> root is missing', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-bad-world-'));
+      try {
+        await fs.writeFile(path.join(tmp, 'world.xml'), '<not-world></not-world>\n', 'utf8');
+        await expect(parseWorldXml(tmp)).rejects.toThrow(/missing <world>/);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseCharacterXml throws when <character> root is missing', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-bad-char-'));
+      try {
+        await fs.writeFile(path.join(tmp, 'character.xml'), '<other></other>\n', 'utf8');
+        await expect(parseCharacterXml(tmp)).rejects.toThrow(/missing <character>/);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseThreadsXml returns empty array when <threads> root is missing', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-empty-threads-'));
+      try {
+        await fs.writeFile(path.join(tmp, 'threads.xml'), '<other></other>\n', 'utf8');
+        await expect(parseThreadsXml(tmp)).resolves.toEqual([]);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseWorldXml tolerates a minimal <world> with missing optional fields', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-minimal-world-'));
+      try {
+        // No <location>, no <conditions>, no <date> attrs. Exercises the
+        // "missing child" undefined-fallback branches in the typed parser.
+        await fs.writeFile(path.join(tmp, 'world.xml'), '<world><date>x</date></world>\n', 'utf8');
+        const w = await parseWorldXml(tmp);
+        expect(w.date).toBe('x');
+        expect(w.calendar).toBe('');
+        expect(w.region).toBe('');
+        expect(w.city).toBe('');
+        expect(w.placeSlug).toBe('');
+        expect(w.weather).toBe('');
+        expect(w.season).toBe('');
+        expect(w.notes).toEqual([]);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseWorldXml handles a <location> without <place> (no placeSlug)', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-no-place-'));
+      try {
+        const xml = '<world><location><region>R</region></location></world>\n';
+        await fs.writeFile(path.join(tmp, 'world.xml'), xml, 'utf8');
+        const w = await parseWorldXml(tmp);
+        expect(w.region).toBe('R');
+        expect(w.placeSlug).toBe('');
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseThreadsXml skips text-only nodes and threads without an id', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-threads-noid-'));
+      try {
+        // <threads> with a thread that has no @id attribute — should still parse,
+        // returning id: ''. Exercises the `attrsOf(node)['@_id'] ?? ''` fallback.
+        const xml =
+          '<threads><thread><name>X</name><progress>0/1</progress><stake>s</stake><trigger>t</trigger></thread></threads>\n';
+        await fs.writeFile(path.join(tmp, 'threads.xml'), xml, 'utf8');
+        const threads = await parseThreadsXml(tmp);
+        expect(threads).toHaveLength(1);
+        expect(threads[0].id).toBe('');
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('parseCharacterXml tolerates missing inventory, reputation, and relationships', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-xml-minimal-char-'));
+      try {
+        const xml = '<character><name>X</name></character>\n';
+        await fs.writeFile(path.join(tmp, 'character.xml'), xml, 'utf8');
+        const c = await parseCharacterXml(tmp);
+        expect(c.name).toBe('X');
+        expect(c.inventory).toEqual([]);
+        expect(c.reputation).toEqual([]);
+        expect(c.relationships).toEqual([]);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
     });
   });
 

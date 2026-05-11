@@ -10,9 +10,8 @@ export interface ParsedDoc {
 
 export class FrontmatterParseError extends Error {
   constructor(message: string, cause?: unknown) {
-    super(message);
+    super(message, { cause });
     this.name = 'FrontmatterParseError';
-    if (cause !== undefined) (this as { cause?: unknown }).cause = cause;
   }
 }
 
@@ -29,9 +28,7 @@ export function parseFrontmatter(raw: string): ParsedDoc {
       body: parsed.content,
     };
   } catch (err) {
-    throw new FrontmatterParseError(
-      err instanceof Error ? err.message : 'frontmatter parse failed',
-      err,
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    throw new FrontmatterParseError(message, err);
   }
 }

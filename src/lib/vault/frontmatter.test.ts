@@ -59,4 +59,11 @@ tags: [unclosed
 x`;
     expect(() => parseFrontmatter(raw)).toThrow(FrontmatterParseError);
   });
+
+  it('FrontmatterParseError supports an undefined cause (no-cause constructor branch)', () => {
+    const e = new FrontmatterParseError('boom');
+    expect(e.name).toBe('FrontmatterParseError');
+    expect(e.message).toBe('boom');
+    expect((e as { cause?: unknown }).cause).toBeUndefined();
+  });
 });

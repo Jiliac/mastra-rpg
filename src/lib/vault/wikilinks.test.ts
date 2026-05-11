@@ -113,6 +113,12 @@ describe('resolveWikilink', () => {
     const r = resolveWikilink({ target: '2026-04-28-img.png', embed: true }, REGISTRY);
     expect(r).toEqual({ kind: 'image', slug: '2026-04-28-img.png', found: false });
   });
+
+  it('unknown folder prefix falls back to bare-link npc-stub behavior', () => {
+    // `widgets/` is not a known kind-folder; the resolver should slugify the whole target.
+    const r = resolveWikilink({ target: 'widgets/Foo Bar', embed: false }, REGISTRY);
+    expect(r).toEqual({ kind: 'npc', slug: 'widgets/foo-bar', found: false });
+  });
 });
 
 describe('stripForTts', () => {
@@ -144,5 +150,10 @@ describe('stripForTts', () => {
 
   it('passes through plain text untouched', () => {
     expect(stripForTts('Plain text with no links.')).toBe('Plain text with no links.');
+  });
+
+  it('emits unknown-folder targets verbatim (no kind-folder boundary to strip)', () => {
+    // `widgets/foo` isn't a known kind-folder; stripForTts treats it as bare.
+    expect(stripForTts('See [[widgets/foo-bar]].')).toBe('See widgets/foo-bar.');
   });
 });

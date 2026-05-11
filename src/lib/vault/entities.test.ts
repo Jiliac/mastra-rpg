@@ -57,6 +57,26 @@ describe('entities', () => {
         expect(s).not.toContain('.');
       }
     });
+
+    it('filters out subdirectories, non-md, and dotfiles in a tmp factions dir', async () => {
+      // Build a tmp vault whose factions/ directory exercises every filter branch:
+      //   - a regular .md file (kept)
+      //   - a subdirectory (filtered by !isFile)
+      //   - a .txt file (filtered by .md extension)
+      //   - a dotfile (filtered by .startsWith('.'))
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'rpg-vault-listfactions-'));
+      try {
+        await fs.mkdir(path.join(tmp, 'factions'), { recursive: true });
+        await fs.writeFile(path.join(tmp, 'factions', 'keeper.md'), '---\n---\n');
+        await fs.mkdir(path.join(tmp, 'factions', 'subdir'));
+        await fs.writeFile(path.join(tmp, 'factions', 'notes.txt'), 'plain');
+        await fs.writeFile(path.join(tmp, 'factions', '.DS_Store'), 'junk');
+        const slugs = await listFactions(tmp);
+        expect(slugs).toEqual(['keeper']);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('loadAlwaysLoaded', () => {
