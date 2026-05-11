@@ -156,4 +156,12 @@ describe('stripForTts', () => {
     // `widgets/foo` isn't a known kind-folder; stripForTts treats it as bare.
     expect(stripForTts('See [[widgets/foo-bar]].')).toBe('See widgets/foo-bar.');
   });
+
+  it('empty alias falls through to deslug rather than disappearing the link', () => {
+    expect(stripForTts('See [[npcs/iron-promise-captain|]].')).toBe('See iron promise captain.');
+  });
+
+  it('whitespace-only alias is treated as empty and falls through', () => {
+    expect(stripForTts('See [[npcs/kessha|   ]].')).toBe('See kessha.');
+  });
 });

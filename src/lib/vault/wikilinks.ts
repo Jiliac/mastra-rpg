@@ -60,7 +60,10 @@ export function parseWikilinks(text: string): ParsedLink[] {
   return links;
 }
 
-const FOLDER_TO_KIND: Record<string, Kind> = {
+// Tighter than Record<string, Kind>: the values exclude 'image' so callers
+// can index KIND_TO_REGISTRY_KEY without a narrowing guard.
+type FolderKind = Exclude<Kind, 'image'>;
+const FOLDER_TO_KIND: Record<string, FolderKind> = {
   npcs: 'npc',
   locations: 'location',
   factions: 'faction',
@@ -92,7 +95,7 @@ export function resolveWikilink(
     const folder = link.target.slice(0, slashIdx);
     const slug = link.target.slice(slashIdx + 1);
     const kind = FOLDER_TO_KIND[folder];
-    if (kind && kind !== 'image') {
+    if (kind) {
       const found = registry[KIND_TO_REGISTRY_KEY[kind]].has(slug);
       return { kind, slug, found };
     }
@@ -114,22 +117,25 @@ export function stripForTts(text: string): string {
     if (bang === '!') return '';
 
     const pipeIdx = inner.indexOf('|');
+    // Split target from alias up front so the fall-through path works on
+    // just the target. Empty/whitespace alias (`[[npcs/foo|]]`) falls
+    // through to deslug rather than disappearing the link from audio.
+    const target = pipeIdx === -1 ? inner : inner.slice(0, pipeIdx);
     if (pipeIdx !== -1) {
-      // Alias wins.
-      return inner.slice(pipeIdx + 1);
+      const alias = inner.slice(pipeIdx + 1).trim();
+      if (alias !== '') return alias;
     }
 
-    // No alias. Strip the kind-folder if present, then deslugify the remainder.
-    const slashIdx = inner.indexOf('/');
+    // No usable alias. Strip the kind-folder if present, then deslugify.
+    const slashIdx = target.indexOf('/');
     if (slashIdx > 0) {
-      const folder = inner.slice(0, slashIdx);
+      const folder = target.slice(0, slashIdx);
       if (folder in FOLDER_TO_KIND) {
-        const slug = inner.slice(slashIdx + 1);
-        // Deslugify only when we've crossed a known kind-folder boundary.
+        const slug = target.slice(slashIdx + 1);
         return slug.replace(/-/g, ' ');
       }
     }
     // Bare link without a known folder: emit target verbatim.
-    return inner;
+    return target;
   });
 }
