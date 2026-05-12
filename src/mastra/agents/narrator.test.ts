@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { narratorAgent } from './narrator';
 import { NarratorOutput } from '@/lib/schemas';
 
+// Cast the empty request context once; @mastra/core@1.32.1 declares
+// RequestContext as `Map<string, any>`-ish, but the `requestContext` parameter
+// on getDefaultOptions / getToolsForExecution is optional and the empty object
+// is accepted at runtime (it just falls through to the static defaults).
 const REQ_CTX = {} as never;
 
 describe('narratorAgent', () => {
