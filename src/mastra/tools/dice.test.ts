@@ -88,11 +88,14 @@ describe('diceTool', () => {
   it('execute() returns a rolled result for a valid expression', async () => {
     // The tool uses Math.random by default; here we just check the shape.
     // @mastra/core@1.32.1 `execute` takes (inputData, context) — see weather-tool.ts.
-    const out = (await diceTool.execute!({ expression: '2d6' } as any, {} as any)) as {
-      expression: string;
-      rolls: number[];
-      total: number;
-    };
+    // The execute fn from createTool's wrapped Tool requires a runtime context
+    // shape we don't care about here; cast through `unknown` to keep this
+    // lint-clean without explicit `any`.
+    const exec = diceTool.execute as unknown as (
+      input: { expression: string },
+      context: Record<string, unknown>,
+    ) => Promise<{ expression: string; rolls: number[]; total: number }>;
+    const out = await exec({ expression: '2d6' }, {});
     expect(out.expression).toBe('2d6');
     expect(out.rolls).toHaveLength(2);
     expect(out.rolls.every((n: number) => n >= 1 && n <= 6)).toBe(true);
@@ -100,8 +103,10 @@ describe('diceTool', () => {
   });
 
   it('execute() throws on an invalid expression so Mastra surfaces a tool error', async () => {
-    await expect(diceTool.execute!({ expression: 'banana' } as any, {} as any)).rejects.toThrow(
-      /invalid expression/,
-    );
+    const exec = diceTool.execute as unknown as (
+      input: { expression: string },
+      context: Record<string, unknown>,
+    ) => Promise<unknown>;
+    await expect(exec({ expression: 'banana' }, {})).rejects.toThrow(/invalid expression/);
   });
 });
