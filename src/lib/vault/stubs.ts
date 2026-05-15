@@ -54,7 +54,9 @@ export function extractExcerpt(prose: string, target: string): string | null {
 }
 
 export interface CreateStubInput {
-  kind: Kind;
+  // Narrower than Kind: 'image' has no entity folder and cannot be stubbed.
+  // Pushing the constraint into the type stops bad calls at compile time.
+  kind: Exclude<Kind, 'image'>;
   slug: string;
   /** The prose the link appeared in. Used to extract the body excerpt. */
   excerptProse: string;
@@ -85,7 +87,9 @@ const KIND_TO_DIR: Record<Exclude<Kind, 'image'>, (root: string) => string> = {
  * Mirrors OpenClaw `cmd_create_stub`. Images cannot be stubbed (no entity).
  */
 export async function createStub(root: string, input: CreateStubInput): Promise<CreateStubResult> {
-  if (input.kind === 'image') {
+  // Defense-in-depth: the type already excludes 'image', but a JS caller or
+  // a cast could still slip it through. Widen to Kind for the comparison.
+  if ((input.kind as Kind) === 'image') {
     throw new Error('createStub: cannot stub an image embed (no entity kind)');
   }
   const dirFn = KIND_TO_DIR[input.kind];
