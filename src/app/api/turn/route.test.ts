@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { POST } from './route';
+import { handleTurnPost as POST } from './route';
 import type { PhaseEvent } from '@/lib/sse/events';
 import { parseSseChunks } from '@/lib/sse/parse';
 import { mockRunTurn } from '@/lib/sse/runner';

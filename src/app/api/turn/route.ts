@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 // Node runtime — we depend on `node:fs` etc. via the runner's transitive imports.
 export const runtime = 'nodejs';
 
-interface PostOpts {
+export interface PostOpts {
   /** Test DI: override the runner. */
   runner?: (input: RunTurnInput, emit: Emit) => Promise<void>;
 }
@@ -56,7 +56,12 @@ const SSE_HEADERS: HeadersInit = {
   'x-accel-buffering': 'no',
 };
 
-export async function POST(req: Request, opts: PostOpts = {}): Promise<Response> {
+/**
+ * Internal implementation. Exported for unit tests that need to inject
+ * a mock runner; production code goes through the `POST` wrapper which
+ * conforms to Next 16's `RouteHandlerConfig` constraint.
+ */
+export async function handleTurnPost(req: Request, opts: PostOpts = {}): Promise<Response> {
   const parsed = await parseBody(req);
   if ('error' in parsed) {
     return new Response(parsed.error, { status: 400 });
@@ -144,4 +149,13 @@ export async function POST(req: Request, opts: PostOpts = {}): Promise<Response>
   });
 
   return new Response(stream, { status: 200, headers: SSE_HEADERS });
+}
+
+/**
+ * Next 16 route handler. Delegates to `handleTurnPost` with no DI — the
+ * default runner path is `runTurn(...)` which itself dispatches between
+ * `mockRunTurn` (env-flagged) and `liveRunTurn`.
+ */
+export async function POST(req: Request): Promise<Response> {
+  return handleTurnPost(req);
 }
