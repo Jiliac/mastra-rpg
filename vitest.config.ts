@@ -18,6 +18,8 @@ export default defineConfig({
         'src/lib/schemas.ts',
         'src/lib/dossier.ts',
         'src/lib/media/**/*.ts',
+        'src/mastra/tools/**/*.ts',
+        'src/mastra/agents/**/*.ts',
       ],
       exclude: ['**/*.test.ts'],
       thresholds: {

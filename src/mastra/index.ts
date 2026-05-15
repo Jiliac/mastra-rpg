@@ -9,12 +9,14 @@ import {
   CloudExporter,
   SensitiveDataFilter,
 } from '@mastra/observability';
-import { weatherWorkflow } from './workflows/weather-workflow';
-import { weatherAgent } from './agents/weather-agent';
+import { narratorAgent } from './agents/narrator';
+import { factionAgent } from './agents/faction';
+import { illustratorAgent } from './agents/illustrator';
 
 export const mastra = new Mastra({
-  workflows: { weatherWorkflow },
-  agents: { weatherAgent },
+  // `workflows` is optional (Config.workflows?: TWorkflows). Omit it rather
+  // than pass `{}` — cleaner, no ambiguity. Wave 5 will add the workflow back.
+  agents: { narratorAgent, factionAgent, illustratorAgent },
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: new LibSQLStore({
