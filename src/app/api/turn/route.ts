@@ -9,6 +9,7 @@
 // abort handler here just flips a flag so subsequent `emit` calls
 // become no-ops.
 
+import { z } from 'zod';
 import type { PhaseEvent } from '@/lib/sse/events';
 import { serializeEvent, serializeHeartbeat } from '@/lib/sse/serialize';
 import { runTurn, type RunTurnInput, type Emit } from '@/lib/sse/runner';
@@ -22,10 +23,18 @@ export interface PostOpts {
   runner?: (input: RunTurnInput, emit: Emit) => Promise<void>;
 }
 
-interface ParsedBody {
-  slug: string;
-  input: string;
-}
+// Project rule (.coderabbit.yaml lines 176-179): route handlers must validate
+// request bodies with zod before touching agents. This POST runs the workflow
+// (touches all three agents via runner.ts), so the boundary is here.
+const TurnBodySchema = z.object({
+  slug: z.string().min(1, 'missing or empty slug'),
+  input: z
+    .string()
+    .min(1, 'missing or empty input')
+    .refine((s) => s.trim().length > 0, { message: 'missing or empty input' }),
+});
+
+type ParsedBody = z.infer<typeof TurnBodySchema>;
 
 async function parseBody(req: Request): Promise<ParsedBody | { error: string }> {
   let body: unknown;
@@ -34,17 +43,13 @@ async function parseBody(req: Request): Promise<ParsedBody | { error: string }> 
   } catch {
     return { error: 'invalid JSON body' };
   }
-  if (typeof body !== 'object' || body === null) {
-    return { error: 'body must be an object' };
+  const parsed = TurnBodySchema.safeParse(body);
+  if (!parsed.success) {
+    // First issue message — keeps responses to the existing wire-format the
+    // tests assert (`missing or empty slug` / `missing or empty input`).
+    return { error: parsed.error.issues[0]?.message ?? 'invalid body' };
   }
-  const o = body as Record<string, unknown>;
-  if (typeof o.slug !== 'string' || o.slug.length === 0) {
-    return { error: 'missing or empty slug' };
-  }
-  if (typeof o.input !== 'string' || o.input.trim().length === 0) {
-    return { error: 'missing or empty input' };
-  }
-  return { slug: o.slug, input: o.input };
+  return parsed.data;
 }
 
 const SSE_HEADERS: HeadersInit = {

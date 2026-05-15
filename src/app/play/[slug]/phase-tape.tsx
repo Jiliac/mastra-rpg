@@ -41,7 +41,7 @@ export function PhaseTape({ phases }: { phases: PhaseRecord[] }) {
       <TaskTrigger title="Turn progress" />
       <TaskContent>
         {phases.map((p) => (
-          <PhaseRow key={`${p.name}-${p.status}`} phase={p} />
+          <PhaseRow key={p.name} phase={p} />
         ))}
       </TaskContent>
     </Task>

@@ -202,7 +202,7 @@ export async function liveRunTurn(input: RunTurnInput, emit: Emit): Promise<void
     illustratorAgent: adaptMastraAgent(
       illustratorAgent as unknown as MastraShape<IllustratorOutput>,
     ),
-    ttsRender: (text, opts) => ttsRender(text, opts),
+    ttsRender,
     emit,
   };
 
