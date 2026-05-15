@@ -724,7 +724,7 @@ git commit -m "wave-6(sse): UiState reducer over PhaseEvent (pure, node-testable
 - Create: `src/lib/sse/runner.ts`
 - Create: `src/lib/sse/runner.test.ts`
 
-`runTurn` is the entire Wave-5/Wave-6 contract. It takes the player's input + slug, and an emit callback, and produces the `PhaseEvent` sequence. In mock mode it's a deterministic function we can fully unit-test; in live mode it delegates to `mastra.getWorkflowById('turnWorkflow')` and reduces the workflow's run stream to `PhaseEvent`s.
+`runTurn` is the entire Wave-5/Wave-6 contract. It takes the player's input + slug, and an emit callback, and produces the `PhaseEvent` sequence. In mock mode it's a deterministic function we can fully unit-test; in live mode it imports `runTurn` directly from `@/mastra/workflows/turn` (the Wave-5 export) and calls it with constructed deps — `narratorAgent`, `factionAgent`, `illustratorAgent` imported directly from `@/mastra/agents/*`; `vaultRoot(slug)` resolves the per-game path; `ttsRender` is the media helper; and `emit` is wired straight into `deps.emit`. Emission flows through `deps.emit` synchronously inside the workflow — there is no run-stream to reduce.
 
 **Mock canonical sequence (the spec's happy path):**
 
@@ -832,12 +832,24 @@ Create `src/lib/sse/runner.ts`:
 // just stops draining `emit` into its response, the workflow runs to
 // completion in background.
 //
-// Mode selection: `runTurn` checks for an injected runner in opts (used
-// by tests) or `process.env.RPG_RUNNER_MOCK === '1'` (used during W6
-// parallel development before W5 lands), otherwise calls the live
-// workflow via `mastra.getWorkflowById('turnWorkflow')`.
+// Mode selection (permanent two-mode seam):
+//   - `opts.runner` (test DI) or `process.env.RPG_RUNNER_MOCK === '1'`
+//     routes to `mockRunTurn` — used by tests and local UI dev to
+//     avoid LLM/API costs.
+//   - Otherwise `liveRunTurn` calls `runTurn` from
+//     `@/mastra/workflows/turn` directly (Wave 5 is merged at f36cd02).
 
 import type { PhaseEvent } from './events';
+import {
+  runTurn as workflowRunTurn,
+  type RunTurnInput as WorkflowInput,
+  type RunTurnDeps,
+} from '@/mastra/workflows/turn';
+import { narratorAgent } from '@/mastra/agents/narrator';
+import { factionAgent } from '@/mastra/agents/faction';
+import { illustratorAgent } from '@/mastra/agents/illustrator';
+import { vaultRoot } from '@/lib/vault/paths';
+import { ttsRender } from '@/lib/media/tts';
 
 export interface RunTurnInput {
   slug: string;
@@ -923,17 +935,6 @@ export async function mockRunTurn(
  * `adaptMastraAgent<T>(agent): AgentLike<T>` (~10 LOC) and wrap each
  * agent before passing into `deps`.
  */
-import {
-  runTurn as workflowRunTurn,
-  type RunTurnInput as WorkflowInput,
-  type RunTurnDeps,
-} from '@/mastra/workflows/turn';
-import { narratorAgent } from '@/mastra/agents/narrator';
-import { factionAgent } from '@/mastra/agents/faction';
-import { illustratorAgent } from '@/mastra/agents/illustrator';
-import { vaultRoot } from '@/lib/vault/paths';
-import { ttsRender } from '@/lib/media/tts';
-
 export async function liveRunTurn(input: RunTurnInput, emit: Emit): Promise<void> {
   const workflowInput: WorkflowInput = {
     vaultRoot: vaultRoot(input.slug),
@@ -988,7 +989,7 @@ Expected: PASS.
 
 ```bash
 git add src/lib/sse/runner.ts src/lib/sse/runner.test.ts
-git commit -m "wave-6(sse): runTurn seam — mock-first, live-stub for W5 swap"
+git commit -m "wave-6(sse): runTurn seam — mock + live wired to wave-5 workflow"
 ```
 
 ---
@@ -2140,7 +2141,7 @@ Verify:
 
 **Spec coverage:** every Wave-6 exit-criterion line (593–598) maps to a task above. Concurrency invariant #3 has its own route-level test (Task 6 Step 1, third `it`). Phase tape, prose stream, audio, images, mutex banner all have a component or a reducer test. Out-of-band cleanup of `src/app/page.tsx` is Task 9.
 
-**Placeholder scan:** no `TBD`, no "implement later", no untested "appropriate error handling" hand-waves. Every code block is complete and copy-pasteable; every test asserts behavior. The single forward reference is "Wave 5 fills in `liveRunTurn`" — that's a deliberate seam and is documented in-source.
+**Placeholder scan:** no `TBD`, no "implement later", no untested "appropriate error handling" hand-waves. Every code block is complete and copy-pasteable; every test asserts behavior. Wave 5 is merged at commit `f36cd02`; `liveRunTurn` is now the real implementation (not a stub), so there are no forward references. The only remaining open question is runtime-only: whether Mastra's concrete `Agent` class structurally assigns to Wave 5's `AgentLike<T>` at the three `RunTurnDeps` call sites. The implementer either confirms compatibility at code-write time, or drops in the ~10-LOC `adaptMastraAgent<T>(agent): AgentLike<T>` shim — already noted in the Risks section and in the inline comment inside `liveRunTurn`.
 
 **Type consistency:** `PhaseEvent` is declared once in `events.ts` and imported everywhere. `UiState` and `PhaseRecord` are declared once in `reducer.ts` and re-used in `phase-tape.tsx`. The `ImageMeta` import path (`@/lib/schemas`) is identical in `events.ts`, `reducer.ts`, and `turn-images.tsx`. `Emit` is a single named export from `runner.ts`. Route POST signature is `(req: Request, opts?: PostOpts) => Promise<Response>` — opts is test-only DI, optional, types match the call sites.
 
