@@ -1,0 +1,1147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>mastra-rpg — Codemap</title>
+    <style>
+      :root {
+        --bg: #0b0c0f;
+        --panel: #13151b;
+        --panel-2: #1a1d26;
+        --ink: #e8eaee;
+        --ink-dim: #9aa0aa;
+        --line: #23262e;
+        --line-strong: #353a48;
+        --accent: #7c9cff;
+        --good: #4ade80;
+        --warn: #fbbf24;
+        --bad: #f87171;
+        --w1: #60a5fa;
+        --w2: #a78bfa;
+        --w3: #34d399;
+        --w4: #fbbf24;
+        --w5: #6b7280;
+        --r-sm: 6px;
+        --r-md: 10px;
+        --r-lg: 16px;
+        --s-1: 4px;
+        --s-2: 8px;
+        --s-3: 12px;
+        --s-4: 16px;
+        --s-5: 24px;
+        --s-6: 32px;
+        --s-7: 48px;
+        --font-sans:
+          ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue',
+          Arial, sans-serif;
+        --font-mono:
+          ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #fafafa;
+          --panel: #ffffff;
+          --panel-2: #f3f4f7;
+          --ink: #15161a;
+          --ink-dim: #5c606a;
+          --line: #e6e7eb;
+          --line-strong: #cbd0d8;
+          --accent: #3b5bdb;
+          --good: #16a34a;
+          --warn: #d97706;
+          --bad: #dc2626;
+          --w1: #2563eb;
+          --w2: #7c3aed;
+          --w3: #059669;
+          --w4: #d97706;
+          --w5: #6b7280;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: var(--s-6) var(--s-5) var(--s-3);
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.01em;
+        margin: 0 0 var(--s-2);
+      }
+      h2 {
+        font-size: 18px;
+        margin: 0 0 var(--s-3);
+      }
+      h3 {
+        font-size: 12px;
+        margin: var(--s-4) 0 var(--s-2);
+        color: var(--ink-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      p {
+        margin: 0 0 var(--s-3);
+      }
+      .muted {
+        color: var(--ink-dim);
+      }
+      .crumbs {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-dim);
+        margin-bottom: var(--s-3);
+      }
+      .stage {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 var(--s-5) var(--s-7);
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: var(--s-5);
+      }
+      @media (max-width: 1080px) {
+        .stage {
+          grid-template-columns: 1fr;
+        }
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        padding: var(--s-4);
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--s-2);
+        margin-bottom: var(--s-3);
+        align-items: center;
+      }
+      .toolbar .label {
+        font-size: 12px;
+        color: var(--ink-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-right: var(--s-2);
+      }
+      .chip {
+        font: inherit;
+        font-size: 13px;
+        background: var(--panel-2);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 12px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        transition:
+          border-color 150ms ease-in-out,
+          background 150ms ease-in-out;
+      }
+      .chip .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      .chip[aria-pressed='true'] {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+      }
+      .chip:hover {
+        border-color: var(--line-strong);
+      }
+      .map-wrap {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        padding: var(--s-3);
+        overflow: auto;
+      }
+      svg.map {
+        display: block;
+        width: 100%;
+        height: auto;
+        min-width: 880px;
+      }
+      .node {
+        cursor: pointer;
+      }
+      .node rect {
+        fill: var(--panel-2);
+        stroke: var(--line-strong);
+        stroke-width: 1;
+        transition:
+          stroke 150ms ease-in-out,
+          fill 150ms ease-in-out;
+      }
+      .node .title {
+        fill: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 500;
+        pointer-events: none;
+      }
+      .node .sub {
+        fill: var(--ink-dim);
+        font-family: var(--font-sans);
+        font-size: 10.5px;
+        pointer-events: none;
+      }
+      .node.selected rect {
+        stroke: var(--accent);
+        stroke-width: 2;
+        fill: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+      }
+      .node.dim {
+        opacity: 0.32;
+      }
+      .node.w1 rect {
+        stroke: var(--w1);
+      }
+      .node.w2 rect {
+        stroke: var(--w2);
+      }
+      .node.w3 rect {
+        stroke: var(--w3);
+      }
+      .node.w4 rect {
+        stroke: var(--w4);
+      }
+      .node.w5 rect {
+        stroke-dasharray: 4 3;
+      }
+      .node.stale rect {
+        stroke: var(--bad);
+      }
+      .node.ext rect {
+        stroke: var(--accent);
+        stroke-dasharray: 1 0;
+      }
+      .lane {
+        fill: none;
+        stroke: var(--line);
+        stroke-dasharray: 3 4;
+      }
+      .lane-label {
+        fill: var(--ink-dim);
+        font-family: var(--font-sans);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .edge {
+        fill: none;
+        stroke: var(--ink-dim);
+        stroke-width: 1.25;
+        opacity: 0.55;
+        transition:
+          stroke 150ms ease-in-out,
+          opacity 150ms ease-in-out;
+      }
+      .edge.stale {
+        stroke: var(--bad);
+        stroke-dasharray: 4 3;
+        opacity: 0.85;
+      }
+      .edge.active {
+        stroke: var(--accent);
+        opacity: 1;
+        stroke-width: 1.75;
+      }
+      .edge.dim {
+        opacity: 0.08;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--s-3);
+        margin-top: var(--s-3);
+        font-size: 12px;
+        color: var(--ink-dim);
+      }
+      .legend .sw {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .legend .key {
+        width: 18px;
+        height: 0;
+        border-top: 2px solid var(--ink-dim);
+      }
+      .legend .keybox {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1px solid;
+      }
+      aside.detail {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        padding: var(--s-4);
+        position: sticky;
+        top: var(--s-4);
+        align-self: start;
+        max-height: calc(100vh - 2 * var(--s-4));
+        overflow: auto;
+      }
+      aside.detail .empty {
+        color: var(--ink-dim);
+        font-style: italic;
+        font-size: 13px;
+      }
+      aside.detail h2 {
+        font-family: var(--font-mono);
+        font-size: 15px;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: var(--s-3);
+      }
+      .tag {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        border: 1px solid var(--line);
+        color: var(--ink-dim);
+      }
+      .tag.good {
+        color: var(--good);
+        border-color: color-mix(in srgb, var(--good) 40%, var(--line));
+      }
+      .tag.warn {
+        color: var(--warn);
+        border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+      }
+      .tag.bad {
+        color: var(--bad);
+        border-color: color-mix(in srgb, var(--bad) 40%, var(--line));
+      }
+      .tag.w1 {
+        color: var(--w1);
+        border-color: color-mix(in srgb, var(--w1) 40%, var(--line));
+      }
+      .tag.w2 {
+        color: var(--w2);
+        border-color: color-mix(in srgb, var(--w2) 40%, var(--line));
+      }
+      .tag.w3 {
+        color: var(--w3);
+        border-color: color-mix(in srgb, var(--w3) 40%, var(--line));
+      }
+      .tag.w4 {
+        color: var(--w4);
+        border-color: color-mix(in srgb, var(--w4) 40%, var(--line));
+      }
+      .tag.w5 {
+        color: var(--w5);
+        border-color: color-mix(in srgb, var(--w5) 40%, var(--line));
+      }
+      .files {
+        list-style: none;
+        margin: 0 0 var(--s-3);
+        padding: 0;
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .files li {
+        padding: 3px 0;
+        color: var(--ink-dim);
+        border-top: 1px solid var(--line);
+      }
+      .files li:first-child {
+        border-top: none;
+      }
+      .files li code {
+        color: var(--ink);
+      }
+      .alert {
+        background: color-mix(in srgb, var(--bad) 12%, var(--panel-2));
+        border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line));
+        border-radius: var(--r-sm);
+        padding: var(--s-3);
+        font-size: 13px;
+        margin-bottom: var(--s-3);
+      }
+      .alert strong {
+        color: var(--bad);
+      }
+      .tldr {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: var(--r-sm);
+        padding: var(--s-3) var(--s-4);
+        margin-bottom: var(--s-4);
+        font-size: 14px;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      @media (max-width: 720px) {
+        header {
+          padding: var(--s-5) var(--s-4) var(--s-3);
+        }
+        .stage {
+          padding: 0 var(--s-4) var(--s-6);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="crumbs">docs/CODEMAPS/codemap.html · 2026-05-15</div>
+      <h1>mastra-rpg — Architecture map</h1>
+      <p class="muted">
+        Next.js 16 + Mastra. Local-only RPG runtime ported from OpenClaw. Waves 1–4 merged on main;
+        Wave 5 (turn workflow) is the next ticket. Click a node to inspect.
+      </p>
+      <div class="tldr">
+        <strong>State of play.</strong> Three agents (narrator, faction, illustrator) and three
+        tools (dice, loadEntity, image) are registered and tested. Vault library is complete. The
+        orchestrating workflow does not exist yet — until Wave 5 lands, <code>/api/chat</code> is
+        the only HTTP entry and it still names the deleted <code>weather-agent</code>.
+      </div>
+    </header>
+
+    <div class="stage">
+      <section>
+        <div class="toolbar" role="toolbar" aria-label="Wave filter">
+          <span class="label">Highlight wave</span>
+          <button class="chip" data-wave="all" aria-pressed="true">All</button>
+          <button class="chip" data-wave="1" aria-pressed="false">
+            <span class="dot" style="background: var(--w1)"></span>Wave 1 · parse
+          </button>
+          <button class="chip" data-wave="2" aria-pressed="false">
+            <span class="dot" style="background: var(--w2)"></span>Wave 2 · state
+          </button>
+          <button class="chip" data-wave="3" aria-pressed="false">
+            <span class="dot" style="background: var(--w3)"></span>Wave 3 · lib
+          </button>
+          <button class="chip" data-wave="4" aria-pressed="false">
+            <span class="dot" style="background: var(--w4)"></span>Wave 4 · agents
+          </button>
+          <button class="chip" data-wave="5" aria-pressed="false">
+            <span class="dot" style="background: var(--w5)"></span>Wave 5 · next
+          </button>
+        </div>
+
+        <div class="map-wrap">
+          <svg class="map" viewBox="0 0 1180 780" role="img" aria-label="Module map of mastra-rpg">
+            <defs>
+              <marker
+                id="arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+              </marker>
+              <marker
+                id="arrow-bad"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--bad)" />
+              </marker>
+              <marker
+                id="arrow-accent"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)" />
+              </marker>
+            </defs>
+
+            <!-- Lane dividers -->
+            <g aria-hidden="true">
+              <line class="lane" x1="20" y1="80" x2="1160" y2="80" />
+              <line class="lane" x1="20" y1="200" x2="1160" y2="200" />
+              <line class="lane" x1="20" y1="380" x2="1160" y2="380" />
+              <line class="lane" x1="20" y1="540" x2="1160" y2="540" />
+              <line class="lane" x1="20" y1="680" x2="1160" y2="680" />
+              <text class="lane-label" x="28" y="42">UI / Edge</text>
+              <text class="lane-label" x="28" y="98">Mastra runtime</text>
+              <text class="lane-label" x="28" y="218">Tools</text>
+              <text class="lane-label" x="28" y="398">Lib (dossier · schemas · media)</text>
+              <text class="lane-label" x="28" y="558">Vault library (src/lib/vault)</text>
+              <text class="lane-label" x="28" y="698">Persistence</text>
+            </g>
+
+            <!-- Edges (drawn first so nodes sit on top) -->
+            <g id="edges" color="var(--ink-dim)">
+              <!-- Stale: page → api/chat → (gone) -->
+              <path class="edge" data-edge="ui" d="M180,55 L370,55" marker-end="url(#arrow)" />
+              <path
+                class="edge stale"
+                data-edge="stale"
+                d="M540,55 L540,108"
+                marker-end="url(#arrow-bad)"
+              />
+
+              <!-- index.ts registers agents -->
+              <path class="edge" data-edge="reg" d="M540,158 L260,210" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="reg" d="M540,158 L540,210" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="reg" d="M540,158 L820,210" marker-end="url(#arrow)" />
+
+              <!-- Agents → Tools -->
+              <path class="edge" data-edge="tools" d="M260,260 L160,300" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="tools" d="M260,260 L380,300" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="tools" d="M820,260 L640,300" marker-end="url(#arrow)" />
+
+              <!-- Agents → schemas (structuredOutput) -->
+              <path
+                class="edge"
+                data-edge="schemas"
+                d="M260,260 L300,415"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="schemas"
+                d="M540,260 L300,415"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="schemas"
+                d="M820,260 L300,415"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- Tools → lib/media/image -->
+              <path class="edge" data-edge="image" d="M640,335 L640,415" marker-end="url(#arrow)" />
+              <!-- media/image → OpenAI -->
+              <path
+                class="edge"
+                data-edge="image"
+                d="M720,440 L1040,440"
+                marker-end="url(#arrow)"
+              />
+              <!-- media/tts → Inworld -->
+              <path
+                class="edge"
+                data-edge="image"
+                d="M880,440 L1040,520"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- loadEntity → vault/entities -->
+              <path class="edge" data-edge="vault" d="M380,335 L380,580" marker-end="url(#arrow)" />
+              <!-- image tool → vault/paths -->
+              <path class="edge" data-edge="vault" d="M640,335 L240,580" marker-end="url(#arrow)" />
+
+              <!-- dossier → vault parsers (multi) -->
+              <path
+                class="edge"
+                data-edge="dossier"
+                d="M120,440 L140,580"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="dossier"
+                d="M120,440 L520,580"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- agents → mastra storage (memory via index.ts) -->
+              <path
+                class="edge"
+                data-edge="storage"
+                d="M540,158 L660,700"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="storage"
+                d="M540,158 L880,700"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- vault library → vault FS -->
+              <path
+                class="edge"
+                data-edge="vaultfs"
+                d="M580,640 L240,700"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- agents → openai chat -->
+              <path
+                class="edge"
+                data-edge="openai"
+                d="M260,210 L1040,360"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="openai"
+                d="M540,210 L1040,360"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="openai"
+                d="M820,210 L1040,360"
+                marker-end="url(#arrow)"
+              />
+            </g>
+
+            <!-- Nodes -->
+            <g id="nodes">
+              <!-- UI lane -->
+              <g class="node" data-id="browser" data-wave="all" tabindex="0">
+                <rect x="40" y="30" width="140" height="50" rx="10" />
+                <text class="title" x="110" y="55" text-anchor="middle">Browser</text>
+                <text class="sub" x="110" y="70" text-anchor="middle">useChat()</text>
+              </g>
+              <g class="node" data-id="chatPage" data-wave="all" tabindex="0">
+                <rect x="220" y="30" width="180" height="50" rx="10" />
+                <text class="title" x="310" y="52" text-anchor="middle">src/app/chat/page.tsx</text>
+                <text class="sub" x="310" y="70" text-anchor="middle">
+                  'use client' · POST/GET /api/chat
+                </text>
+              </g>
+              <g class="node stale" data-id="apiChat" data-wave="all" tabindex="0">
+                <rect x="440" y="30" width="200" height="50" rx="10" />
+                <text class="title" x="540" y="52" text-anchor="middle">
+                  src/app/api/chat/route.ts
+                </text>
+                <text class="sub" x="540" y="70" text-anchor="middle">
+                  ⚠ refs deleted weather-agent
+                </text>
+              </g>
+
+              <!-- Mastra runtime -->
+              <g class="node w4" data-id="mastraIndex" data-wave="4" tabindex="0">
+                <rect x="440" y="108" width="200" height="50" rx="10" />
+                <text class="title" x="540" y="130" text-anchor="middle">src/mastra/index.ts</text>
+                <text class="sub" x="540" y="148" text-anchor="middle">
+                  agents · storage · observability
+                </text>
+              </g>
+
+              <!-- Agents -->
+              <g class="node w4" data-id="narrator" data-wave="4" tabindex="0">
+                <rect x="170" y="210" width="180" height="50" rx="10" />
+                <text class="title" x="260" y="232" text-anchor="middle">narratorAgent</text>
+                <text class="sub" x="260" y="250" text-anchor="middle">
+                  tools: loadEntity, dice
+                </text>
+              </g>
+              <g class="node w4" data-id="faction" data-wave="4" tabindex="0">
+                <rect x="450" y="210" width="180" height="50" rx="10" />
+                <text class="title" x="540" y="232" text-anchor="middle">factionAgent</text>
+                <text class="sub" x="540" y="250" text-anchor="middle">no tools</text>
+              </g>
+              <g class="node w4" data-id="illustrator" data-wave="4" tabindex="0">
+                <rect x="730" y="210" width="180" height="50" rx="10" />
+                <text class="title" x="820" y="232" text-anchor="middle">illustratorAgent</text>
+                <text class="sub" x="820" y="250" text-anchor="middle">tools: image</text>
+              </g>
+
+              <!-- Tools -->
+              <g class="node w4" data-id="dice" data-wave="4" tabindex="0">
+                <rect x="80" y="300" width="160" height="46" rx="10" />
+                <text class="title" x="160" y="322" text-anchor="middle">tools/dice</text>
+                <text class="sub" x="160" y="338" text-anchor="middle">NdM · pbta · adv/dis</text>
+              </g>
+              <g class="node w4" data-id="loadEntity" data-wave="4" tabindex="0">
+                <rect x="300" y="300" width="160" height="46" rx="10" />
+                <text class="title" x="380" y="322" text-anchor="middle">tools/loadEntity</text>
+                <text class="sub" x="380" y="338" text-anchor="middle">ENOENT → found:false</text>
+              </g>
+              <g class="node w4" data-id="imageTool" data-wave="4" tabindex="0">
+                <rect x="560" y="300" width="160" height="46" rx="10" />
+                <text class="title" x="640" y="322" text-anchor="middle">tools/image</text>
+                <text class="sub" x="640" y="338" text-anchor="middle">→ media/image.ts</text>
+              </g>
+
+              <!-- Lib layer -->
+              <g class="node w3" data-id="dossier" data-wave="3" tabindex="0">
+                <rect x="40" y="415" width="160" height="50" rx="10" />
+                <text class="title" x="120" y="437" text-anchor="middle">lib/dossier.ts</text>
+                <text class="sub" x="120" y="455" text-anchor="middle">
+                  identifyOnStage · builders
+                </text>
+              </g>
+              <g class="node w3" data-id="schemas" data-wave="3" tabindex="0">
+                <rect x="220" y="415" width="160" height="50" rx="10" />
+                <text class="title" x="300" y="437" text-anchor="middle">lib/schemas.ts</text>
+                <text class="sub" x="300" y="455" text-anchor="middle">Zod output schemas</text>
+              </g>
+              <g class="node w3" data-id="mediaImage" data-wave="3" tabindex="0">
+                <rect x="560" y="415" width="160" height="50" rx="10" />
+                <text class="title" x="640" y="437" text-anchor="middle">lib/media/image.ts</text>
+                <text class="sub" x="640" y="455" text-anchor="middle">gpt-image-2 PNG</text>
+              </g>
+              <g class="node w3" data-id="mediaTts" data-wave="3" tabindex="0">
+                <rect x="740" y="415" width="180" height="50" rx="10" />
+                <text class="title" x="830" y="437" text-anchor="middle">lib/media/tts.ts</text>
+                <text class="sub" x="830" y="455" text-anchor="middle">
+                  inworld-tts-2 · unwired
+                </text>
+              </g>
+
+              <!-- Vault library box (composite) -->
+              <g class="node w1" data-id="vaultLib" data-wave="1" tabindex="0">
+                <rect x="40" y="575" width="1080" height="90" rx="10" />
+                <text class="title" x="60" y="598" text-anchor="start">src/lib/vault/</text>
+                <text
+                  class="sub"
+                  x="60"
+                  y="616"
+                  text-anchor="start"
+                  style="font-family: var(--font-mono)"
+                >
+                  Wave 1 · paths · frontmatter · wikilinks · xml · entities
+                </text>
+                <text
+                  class="sub"
+                  x="60"
+                  y="634"
+                  text-anchor="start"
+                  style="font-family: var(--font-mono)"
+                >
+                  Wave 2 · journal · playtests · threads · stubs · turnId · lock
+                </text>
+                <text class="sub" x="60" y="652" text-anchor="start">click for module list →</text>
+              </g>
+
+              <!-- Persistence -->
+              <g class="node" data-id="libsql" data-wave="all" tabindex="0">
+                <rect x="560" y="700" width="200" height="50" rx="10" />
+                <text class="title" x="660" y="722" text-anchor="middle">mastra.db (LibSQL)</text>
+                <text class="sub" x="660" y="740" text-anchor="middle">
+                  threads · messages · state
+                </text>
+              </g>
+              <g class="node" data-id="duckdb" data-wave="all" tabindex="0">
+                <rect x="780" y="700" width="200" height="50" rx="10" />
+                <text class="title" x="880" y="722" text-anchor="middle">mastra.duckdb</text>
+                <text class="sub" x="880" y="740" text-anchor="middle">observability traces</text>
+              </g>
+              <g class="node" data-id="vaultFs" data-wave="all" tabindex="0">
+                <rect x="40" y="700" width="380" height="50" rx="10" />
+                <text class="title" x="230" y="722" text-anchor="middle">vaults/&lt;slug&gt;/</text>
+                <text class="sub" x="230" y="740" text-anchor="middle">
+                  XML · MD · images · playtests · .turn-counter
+                </text>
+              </g>
+
+              <!-- External services -->
+              <g class="node ext" data-id="openai" data-wave="all" tabindex="0">
+                <rect x="1000" y="330" width="160" height="50" rx="10" />
+                <text class="title" x="1080" y="352" text-anchor="middle">OpenAI</text>
+                <text class="sub" x="1080" y="370" text-anchor="middle">gpt-5.5 · gpt-image-2</text>
+              </g>
+              <g class="node ext" data-id="inworld" data-wave="all" tabindex="0">
+                <rect x="1000" y="490" width="160" height="50" rx="10" />
+                <text class="title" x="1080" y="512" text-anchor="middle">Inworld TTS</text>
+                <text class="sub" x="1080" y="530" text-anchor="middle">inworld-tts-2 · OGG</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <div class="legend" aria-label="Map legend">
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w1)"></span>Wave 1 (parsers)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w2)"></span>Wave 2 (state)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w3)"></span>Wave 3 (lib)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w4)"></span>Wave 4 (agents)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--bad)"></span>Stale / broken
+          </span>
+          <span class="sw"> <span class="key"></span>flow </span>
+          <span class="sw">
+            <span class="key" style="border-top-color: var(--bad); border-top-style: dashed"></span
+            >broken edge
+          </span>
+        </div>
+      </section>
+
+      <aside class="detail" id="detail" aria-live="polite">
+        <p class="empty" id="detailEmpty">Click any node on the map to inspect.</p>
+        <div id="detailBody" hidden>
+          <h2 id="dTitle"></h2>
+          <p class="muted" id="dSub"></p>
+          <div class="tags" id="dTags"></div>
+          <div id="dAlert"></div>
+          <p id="dBody"></p>
+          <h3>Files</h3>
+          <ul class="files" id="dFiles"></ul>
+          <h3>Links to</h3>
+          <ul class="files" id="dLinks"></ul>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      // ---- Data ---------------------------------------------------------
+      const NODES = {
+        browser: {
+          title: 'Browser',
+          sub: '@ai-sdk/react useChat()',
+          body: 'Single-page chat surface. Hits POST/GET /api/chat. Will need to be rewired to /api/turn in Wave 6.',
+          files: [],
+          links: ['chatPage'],
+          tags: [['info', 'client']],
+        },
+        chatPage: {
+          title: 'src/app/chat/page.tsx',
+          sub: "'use client' · DefaultChatTransport",
+          body: 'Renders a message list and a form. On mount fetches history from /api/chat. Uses ai-elements components only after Wave 6.',
+          files: ['src/app/chat/page.tsx'],
+          links: ['apiChat'],
+          tags: [['info', 'client']],
+        },
+        apiChat: {
+          title: 'src/app/api/chat/route.ts',
+          sub: 'POST stream + GET memory recall',
+          body: "Still calls handleChatStream({ agentId: 'weather-agent' }) and mastra.getAgentById('weather-agent'). The weather agent was removed in Wave 4, so both methods will fail at runtime. Dead code until Wave 5 lands /api/turn.",
+          alert: '⚠ Stale: references a deleted agent. Will 500 on any call.',
+          files: ['src/app/api/chat/route.ts'],
+          links: ['mastraIndex'],
+          tags: [['bad', 'stale']],
+        },
+        mastraIndex: {
+          title: 'src/mastra/index.ts',
+          sub: 'Mastra singleton (~48 LOC)',
+          body: 'Registers narratorAgent, factionAgent, illustratorAgent. workflows key intentionally omitted (Wave 5 will add it). Storage: MastraCompositeStore — default LibSQL, domain.observability DuckDB. Observability: DefaultExporter + CloudExporter + SensitiveDataFilter.',
+          files: ['src/mastra/index.ts', 'src/mastra/index.test.ts'],
+          links: ['narrator', 'faction', 'illustrator', 'libsql', 'duckdb'],
+          tags: [['w4', 'wave 4']],
+        },
+        narrator: {
+          title: 'agents/narrator.ts',
+          sub: 'id "narrator" · openai/gpt-5.5',
+          body: 'Writes per-turn prose given a dossier (world, character, threads, style guide, on-stage, recent journal, faction decisions, player input). Returns NarratorOutput = { prose, time_passed? }. Uses loadEntity to look up wikilinks not in the on-stage block; calls dice mid-prose.',
+          files: ['src/mastra/agents/narrator.ts'],
+          links: ['loadEntity', 'dice', 'schemas', 'openai'],
+          tags: [
+            ['w4', 'wave 4'],
+            ['good', 'has tools'],
+            ['info', 'reasoningEffort: high'],
+          ],
+        },
+        faction: {
+          title: 'agents/faction.ts',
+          sub: 'id "faction" · openai/gpt-5.5',
+          body: 'Plays one faction per call. Returns FactionOutput = { decision, reasoning }. The workflow fans out one call per on-stage faction, then collects decisions for the narrator dossier. No tools — pure prompt → JSON.',
+          files: ['src/mastra/agents/faction.ts'],
+          links: ['schemas', 'openai'],
+          tags: [
+            ['w4', 'wave 4'],
+            ['info', 'no tools'],
+          ],
+        },
+        illustrator: {
+          title: 'agents/illustrator.ts',
+          sub: 'id "illustrator" · openai/gpt-5.5',
+          body: "Chooses 0–3 scenes from the narrator prose, calls the image tool to generate PNGs, returns IllustratorOutput = { prose_with_embeds, images[] }. Inserts `![[filename.png]]` embeds on their own lines without changing the narrator's words.",
+          files: ['src/mastra/agents/illustrator.ts'],
+          links: ['imageTool', 'schemas', 'openai'],
+          tags: [['w4', 'wave 4']],
+        },
+        dice: {
+          title: 'tools/dice.ts',
+          sub: 'pure parser + roller',
+          body: 'Grammar: NdM[±K], pbta[±K], advantage, disadvantage. Caps N ≤ 100, M ≤ 1000 to defeat adversarial prompt DoS. Throws on invalid input — agent contract is to retry with a valid expression. rng injectable for deterministic tests.',
+          files: ['src/mastra/tools/dice.ts'],
+          links: [],
+          tags: [
+            ['w4', 'wave 4'],
+            ['good', 'pure'],
+          ],
+        },
+        loadEntity: {
+          title: 'tools/loadEntity.ts',
+          sub: 'read-only vault loader',
+          body: 'Wraps Wave-1 loadNpc / loadFaction / loadLocation. ENOENT → { found: false, error }; any other loader error rethrows so real bugs surface. Default vault root: vaultRoot(process.env.VAULT_SLUG); deps.vaultRoot overrides in tests.',
+          files: ['src/mastra/tools/loadEntity.ts'],
+          links: ['vaultLib'],
+          tags: [['w4', 'wave 4']],
+        },
+        imageTool: {
+          title: 'tools/image.ts',
+          sub: 'adapter → media/image.ts',
+          body: 'Thin Mastra wrapper around generateImage(). Default vault root from VAULT_SLUG. Output schema is the same ImageMeta Zod schema that the illustrator consumes — single source of truth.',
+          files: ['src/mastra/tools/image.ts'],
+          links: ['mediaImage'],
+          tags: [['w4', 'wave 4']],
+        },
+        dossier: {
+          title: 'lib/dossier.ts',
+          sub: '~300 LOC · prompt assembly',
+          body: 'identifyOnStage(playerInput, recent, entities) → { npcs, locations, factionsToSpawn }. buildFactionDossier / buildNarratorDossier / buildIllustratorDossier emit XML-ish strings. extractVisualBlock parses the ## Visual section of the style-guide. Attribute values are esc-quoted; markdown bodies pass through raw on purpose.',
+          files: ['src/lib/dossier.ts', 'src/lib/dossier.test.ts'],
+          links: ['vaultLib'],
+          tags: [['w3', 'wave 3']],
+        },
+        schemas: {
+          title: 'lib/schemas.ts',
+          sub: 'Zod + inferred TS types',
+          body: 'FactionOutput, NarratorOutput, IllustratorOutput, ImageMeta. Each export is both a Zod schema (value) and a TS type alias under the same name — value position picks the schema, type position picks the alias.',
+          files: ['src/lib/schemas.ts', 'src/lib/schemas.test.ts'],
+          links: [],
+          tags: [['w3', 'wave 3']],
+        },
+        mediaImage: {
+          title: 'lib/media/image.ts',
+          sub: 'OpenAI gpt-image-2',
+          body: 'generateImage({ prompt, slug, vaultRoot }) → ImageMeta. Quality "high" by default. Writes PNGs under <vaultRoot>/images/<ts>-<slug>-<rand>.png. 6-char random suffix prevents same-second collisions across parallel calls. deps.openai is the structural seam (OpenAILike) — tests inject a fake.',
+          files: ['src/lib/media/image.ts'],
+          links: ['openai', 'vaultFs'],
+          tags: [['w3', 'wave 3']],
+        },
+        mediaTts: {
+          title: 'lib/media/tts.ts',
+          sub: 'Inworld inworld-tts-2',
+          body: 'ttsRender(text, options) renders OGG Opus directly (no MP3 intermediate, no ffmpeg). deps.inworld is the structural seam. Module is built and tested but no agent or tool calls it yet — reserved for future narration playback.',
+          files: ['src/lib/media/tts.ts'],
+          links: ['inworld'],
+          tags: [
+            ['w3', 'wave 3'],
+            ['warn', 'unwired'],
+          ],
+        },
+        vaultLib: {
+          title: 'src/lib/vault/',
+          sub: 'Waves 1 + 2 · FS / parsing / state',
+          body: 'Wave 1 (parsers): paths, frontmatter, wikilinks, xml, entities — pure reads. Wave 2 (writes + state): journal (parseRecentEntries + appendJournal), playtests (appendPlaytest), threads (worldTick, atomic), stubs (extractExcerpt + createStub), turnId (mintTurnId, atomic counter), lock (per-vault globalThis mutex, HMR-safe).',
+          files: [
+            'src/lib/vault/paths.ts',
+            'src/lib/vault/frontmatter.ts',
+            'src/lib/vault/wikilinks.ts',
+            'src/lib/vault/xml.ts',
+            'src/lib/vault/entities.ts',
+            'src/lib/vault/journal.ts',
+            'src/lib/vault/playtests.ts',
+            'src/lib/vault/threads.ts',
+            'src/lib/vault/stubs.ts',
+            'src/lib/vault/turnId.ts',
+            'src/lib/vault/lock.ts',
+          ],
+          links: ['vaultFs'],
+          tags: [
+            ['w1', 'wave 1'],
+            ['w2', 'wave 2'],
+          ],
+        },
+        libsql: {
+          title: 'mastra.db (LibSQL)',
+          sub: 'file:./mastra.db',
+          body: 'Primary Mastra storage. Manages its own threads/messages/state schema; no app-level migrations. WAL files: mastra.db-shm, mastra.db-wal.',
+          files: ['./mastra.db'],
+          links: [],
+          tags: [['info', 'on disk']],
+        },
+        duckdb: {
+          title: 'mastra.duckdb',
+          sub: 'observability traces',
+          body: 'DuckDBStore for Mastra observability spans. Bound to the "observability" domain on the composite store.',
+          files: ['./mastra.duckdb'],
+          links: [],
+          tags: [['info', 'on disk']],
+        },
+        vaultFs: {
+          title: 'vaults/<slug>/',
+          sub: 'Markdown + XML + state',
+          body: 'world.xml, threads.xml, character.xml, 0-Map.md, style-guide.md, journal.md, factions/, npcs/, locations/, images/, playtests/<YYYY-MM-DD>.md, .turn-counter. Live vault: vaults/commodore-vex/. Fixture: tests/fixtures/test-vault/.',
+          files: ['vaults/commodore-vex/', 'tests/fixtures/test-vault/'],
+          links: [],
+          tags: [['info', 'filesystem']],
+        },
+        openai: {
+          title: 'OpenAI',
+          sub: 'chat + images',
+          body: 'Three agents target openai/gpt-5.5 with reasoningEffort: "high". The image tool uses gpt-image-2 quality "high". Auth via OPENAI_API_KEY.',
+          files: [],
+          links: [],
+          tags: [['info', 'external']],
+        },
+        inworld: {
+          title: 'Inworld TTS',
+          sub: 'model inworld-tts-2',
+          body: 'Speech synthesis (OGG Opus). Auth via INWORLD_API_KEY. SDK: @inworld/tts ^1.1.1.',
+          files: [],
+          links: [],
+          tags: [['info', 'external']],
+        },
+      };
+
+      // ---- Filter -------------------------------------------------------
+      const chips = document.querySelectorAll('.chip');
+      function setWave(w) {
+        chips.forEach((c) =>
+          c.setAttribute('aria-pressed', c.dataset.wave === w ? 'true' : 'false'),
+        );
+        const nodes = document.querySelectorAll('.node');
+        if (w === 'all') {
+          nodes.forEach((n) => n.classList.remove('dim'));
+        } else {
+          nodes.forEach((n) => {
+            const wave = n.dataset.wave;
+            const isVault = n.dataset.id === 'vaultLib';
+            const include = wave === w || wave === 'all' || (isVault && (w === '1' || w === '2'));
+            n.classList.toggle('dim', !include);
+          });
+        }
+      }
+      chips.forEach((c) => c.addEventListener('click', () => setWave(c.dataset.wave)));
+
+      // ---- Selection ----------------------------------------------------
+      const detailEmpty = document.getElementById('detailEmpty');
+      const detailBody = document.getElementById('detailBody');
+      const dTitle = document.getElementById('dTitle');
+      const dSub = document.getElementById('dSub');
+      const dBody = document.getElementById('dBody');
+      const dTags = document.getElementById('dTags');
+      const dFiles = document.getElementById('dFiles');
+      const dLinks = document.getElementById('dLinks');
+      const dAlert = document.getElementById('dAlert');
+
+      const linkTitle = (id) => (NODES[id] ? NODES[id].title : id);
+
+      function clearSelection() {
+        document.querySelectorAll('.node.selected').forEach((n) => n.classList.remove('selected'));
+        document.querySelectorAll('.edge').forEach((e) => e.classList.remove('active', 'dim'));
+      }
+
+      function highlightEdges(id) {
+        const map = {
+          chatPage: ['ui'],
+          apiChat: ['stale'],
+          browser: ['ui'],
+          mastraIndex: ['reg', 'storage'],
+          narrator: ['reg', 'tools', 'schemas', 'openai'],
+          faction: ['reg', 'schemas', 'openai'],
+          illustrator: ['reg', 'tools', 'schemas', 'openai'],
+          dice: ['tools'],
+          loadEntity: ['tools', 'vault'],
+          imageTool: ['tools', 'image', 'vault'],
+          dossier: ['dossier'],
+          schemas: ['schemas'],
+          mediaImage: ['image'],
+          mediaTts: ['image'],
+          vaultLib: ['vault', 'dossier', 'vaultfs'],
+          vaultFs: ['vaultfs'],
+          libsql: ['storage'],
+          duckdb: ['storage'],
+          openai: ['openai', 'image'],
+          inworld: ['image'],
+        };
+        const wanted = map[id] || [];
+        document.querySelectorAll('.edge').forEach((e) => {
+          if (wanted.includes(e.dataset.edge)) e.classList.add('active');
+          else e.classList.add('dim');
+        });
+      }
+
+      function select(id) {
+        clearSelection();
+        const node = document.querySelector(`[data-id="${id}"]`);
+        if (!node) return;
+        node.classList.add('selected');
+        highlightEdges(id);
+        const data = NODES[id];
+        if (!data) return;
+        detailEmpty.hidden = true;
+        detailBody.hidden = false;
+        dTitle.textContent = data.title;
+        dSub.textContent = data.sub || '';
+        dBody.textContent = data.body || '';
+        dTags.innerHTML = (data.tags || [])
+          .map(([cls, label]) => `<span class="tag ${cls}">${label}</span>`)
+          .join('');
+        dAlert.innerHTML = data.alert
+          ? `<div class="alert"><strong>Heads-up.</strong> ${data.alert}</div>`
+          : '';
+        dFiles.innerHTML =
+          (data.files || []).length === 0
+            ? '<li class="muted">—</li>'
+            : data.files.map((f) => `<li><code>${f}</code></li>`).join('');
+        dLinks.innerHTML =
+          (data.links || []).length === 0
+            ? '<li class="muted">—</li>'
+            : data.links
+                .map((l) => `<li><a href="#" data-go="${l}"><code>${linkTitle(l)}</code></a></li>`)
+                .join('');
+        dLinks.querySelectorAll('a[data-go]').forEach((a) =>
+          a.addEventListener('click', (e) => {
+            e.preventDefault();
+            select(a.dataset.go);
+          }),
+        );
+      }
+
+      document.querySelectorAll('.node').forEach((n) => {
+        n.addEventListener('click', () => select(n.dataset.id));
+        n.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            select(n.dataset.id);
+          }
+        });
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          clearSelection();
+          detailBody.hidden = true;
+          detailEmpty.hidden = false;
+        }
+      });
+
+      // Auto-select the stale route on load to draw attention to the live issue.
+      select('apiChat');
+    </script>
+  </body>
+</html>

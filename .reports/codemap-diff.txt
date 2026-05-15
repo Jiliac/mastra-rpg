@@ -1,52 +1,104 @@
-Codemap generation report — 2026-05-11 06:11 GMT+2
-====================================================
+Codemap generation report — 2026-05-15 10:12 GMT+2
+Previous run: 2026-05-11 06:11 GMT+2
 
-Mode: INITIAL (no prior codemaps existed in docs/CODEMAPS/)
+Scope of update: Waves 2, 3, and 4 all merged into main since the prior codemap
+snapshot. The change footprint exceeds 30% — all five codemaps were rewritten
+in place rather than incrementally diffed.
 
-Generated files
----------------
-docs/CODEMAPS/architecture.md   (system boundaries, layers, port-wave status, data flow)
-docs/CODEMAPS/backend.md        (API routes, Mastra runtime layout, tools, vault lib)
-docs/CODEMAPS/frontend.md       (App Router page tree, chat flow, component libraries)
-docs/CODEMAPS/data.md           (Mastra storage + vault filesystem contract + wikilink rules)
-docs/CODEMAPS/dependencies.md   (Mastra/AI/UI/tooling stack + external services)
+================================================================================
+Files added since last scan (Waves 2+3+4)
+================================================================================
 
-Files scanned
--------------
-src/mastra/{index.ts, agents/, tools/, workflows/}   (5 files)
-src/app/{layout.tsx, page.tsx, chat/page.tsx, api/chat/route.ts}
-src/lib/vault/{entities,frontmatter,paths,wikilinks,xml}.ts
-package.json, tsconfig.json, vitest.config.ts
-docs/superpowers/specs/2026-05-10-mastra-rpg-runtime-port-design.md (peek)
-tests/fixtures/test-vault/** (structure only)
-vaults/ (listing only — single 'commodore-vex' campaign)
+Wave 2 (vault writes + state):
+  src/lib/vault/journal.ts        parseRecentEntries + appendJournal
+  src/lib/vault/playtests.ts      appendPlaytest → playtests/<YYYY-MM-DD>.md
+  src/lib/vault/stubs.ts          extractExcerpt + createStub (kind excludes 'image')
+  src/lib/vault/threads.ts        worldTick — atomic tmp+rename rewrite
+  src/lib/vault/turnId.ts         mintTurnId → "turn-NNN"
+  src/lib/vault/lock.ts           per-vault globalThis mutex (HMR-safe)
+  + sibling *.test.ts for each
 
-Architecture observations
--------------------------
-- Project type: single Next.js app + in-process Mastra runtime (pnpm workspace declared but no packages/).
-- Active port: OpenClaw RPG skill suite → Mastra workflow. Wave-1 (vault parsers) merged via PR #1.
-  Wave-2 (runtime port: turn workflow, /api/turn SSE, alias registry) in progress on branch
-  auto/2026-05-10-mastra-rpg-runtime-port-design-wave-2.
-- Single API surface today: POST/GET /api/chat (weather demo). Spec calls for /api/turn next.
-- Composite storage: LibSQL primary + DuckDB for observability — note in data.md.
-- ai-elements/ component library is pre-installed but not yet wired into the chat page;
-  it stages UI primitives for the upcoming RPG turn surface.
+Wave 3 (dossier + schemas + media):
+  src/lib/dossier.ts              identifyOnStage + buildFactionDossier
+                                  + buildNarratorDossier + buildIllustratorDossier
+                                  + extractVisualBlock
+  src/lib/schemas.ts              FactionOutput, NarratorOutput, IllustratorOutput, ImageMeta
+                                  (Zod schemas + co-named TS type aliases)
+  src/lib/media/image.ts          OpenAI gpt-image-2 PNG generator
+  src/lib/media/tts.ts            Inworld inworld-tts-2 OGG Opus renderer
+  + sibling *.test.ts for each
 
-Dependencies of note
---------------------
-- @mastra/* suite at 1.x (core 1.32.1, ai-sdk 1.4.1, libsql 1.10.0, duckdb 1.3.0, memory 1.17.5)
-- ai@6 + @ai-sdk/* — version mismatch with @mastra/ai-sdk produces a documented `any` cast
-  at src/app/api/chat/route.ts:23 ("structurally-divergent UIMessage types").
-- Model id `openai/gpt-5.5` set in weather-agent.ts — confirm before relying on it in fresh
-  agents (training data may be stale for current Mastra model spec format).
-- vitest@4 with v8 coverage.
+Wave 4 (Mastra tools + agents):
+  src/mastra/tools/dice.ts        NdM/pbta/advantage/disadvantage parser+roller
+  src/mastra/tools/loadEntity.ts  ENOENT-safe vault entity loader
+  src/mastra/tools/image.ts       Adapter over src/lib/media/image.ts
+  src/mastra/agents/narrator.ts   tools: loadEntity + dice; schema: NarratorOutput
+  src/mastra/agents/faction.ts    no tools; schema: FactionOutput
+  src/mastra/agents/illustrator.ts tools: image; schema: IllustratorOutput
+  + sibling *.test.ts for each
 
-Staleness warnings
-------------------
-None — initial generation.
+================================================================================
+Files removed
+================================================================================
 
-Next-run hints
---------------
-- Re-run after Wave-2 lands /api/turn + workflows/turn.ts to capture the GM pipeline.
-- Re-run after first non-weather agent is added to keep agents/tools inventory honest.
-- Watch for src/lib/vault/ growth; entities.ts is the natural seam for adding journal/zero-map writers.
+  src/mastra/agents/weather-agent.ts      (Wave 4 cleanup, c132a4a)
+  src/mastra/tools/weather-tool.ts        (Wave 4 cleanup, c132a4a)
+  src/mastra/workflows/weather-workflow.ts (Wave 4 cleanup, c132a4a)
+  src/mastra/workflows/                    directory removed
+  @mastra/memory                           dependency dropped (was used only by weather-agent)
+
+================================================================================
+Files modified
+================================================================================
+
+  src/mastra/index.ts
+    - Now registers agents: { narratorAgent, factionAgent, illustratorAgent }
+    - workflows key intentionally omitted (was `weatherWorkflow`); Wave 5 will reintroduce
+    - Storage, logger, observability config unchanged
+  src/mastra/index.test.ts
+    - Verifies registration of the three Wave-4 agents
+    - Asserts weatherAgent / weatherWorkflow absent
+  package.json
+    - Added: @inworld/tts ^1.1.1, openai ^6.37.0
+    - Removed: @mastra/memory
+
+================================================================================
+Latent issues surfaced
+================================================================================
+
+  src/app/api/chat/route.ts (both POST and GET)
+    Still references agentId: 'weather-agent' and mastra.getAgentById('weather-agent').
+    The weather agent no longer exists in the runtime — calls to /api/chat will
+    fail at runtime. The route is dead code until Wave 5 lands /api/turn.
+    Flagged in architecture.md, backend.md, frontend.md.
+
+================================================================================
+New external services / env vars
+================================================================================
+
+  +OpenAI Images        gpt-image-2 (quality=high) via image tool                OPENAI_API_KEY
+  +Inworld TTS          inworld-tts-2 OGG Opus via src/lib/media/tts.ts          INWORLD_API_KEY
+  +VAULT_SLUG env var   default vault root for loadEntity + image tools
+
+  -open-meteo (geocoding + forecast) — removed with weather tool
+
+================================================================================
+Architecture changes
+================================================================================
+
+  - Mastra runtime is no longer a starter weather demo; it is the RPG agent
+    suite (narrator + faction + illustrator) registered against Wave-1/2/3 vault
+    plumbing.
+  - The turn-orchestrating workflow (src/mastra/workflows/turn.ts) is the only
+    remaining piece before /api/turn can replace /api/chat — Wave 5 ticket.
+  - On-stage detection + dossier assembly is now a pure-TS layer in src/lib/
+    rather than embedded in agent prompts. The agents call it via the workflow
+    (when written); none of the three agents construct prompts themselves.
+
+================================================================================
+Staleness signals
+================================================================================
+
+  - /api/chat route: stale by ~4 days; carries a broken agentId reference.
+  - chat/page.tsx: still wired to /api/chat; needs rewire to /api/turn in Wave 6.
+  - No codemap has gone 90+ days without update — all five regenerated today.
