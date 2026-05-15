@@ -184,10 +184,15 @@ describe('runTurn — Step 2: faction fan-out', () => {
     expect(factionAgent.generateCalls).toHaveLength(2);
   });
 
-  it('Nit 4: synthesises [faction file missing] when NPC.frontmatter.faction has no file', async () => {
+  it('Nit 4: synthesises [no response] (with [faction file missing] reasoning) when NPC.frontmatter.faction has no file', async () => {
     // Mutate the fixture copy: add an NPC whose `faction` slug has no
     // matching factions/<slug>.md file. This exercises the inline defensive
-    // branch in runTurn (`if (!factionDoc)`).
+    // branch in runTurn (`if (!factionDoc)`), which short-circuits with
+    // `{ decision: '[no response]', reasoning: '[faction file missing]' }`.
+    // The narrator prompt only surfaces `decision` (via renderDecisions in
+    // dossier.ts), so the assertion below checks for `[no response]`. The
+    // `[faction file missing]` marker is preserved on the decision object
+    // for traceability but is not rendered into the prompt.
     await fs.writeFile(
       path.join(vault, 'npcs', 'ghost.md'),
       [
