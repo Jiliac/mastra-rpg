@@ -22,4 +22,10 @@ describe('mastra registration', () => {
     const workflows = mastra.listWorkflows();
     expect(workflows).not.toHaveProperty('weatherWorkflow');
   });
+
+  it('registers turnWorkflow (Wave 5)', () => {
+    const w = mastra.getWorkflow('turnWorkflow');
+    expect(w).toBeDefined();
+    expect(w.id).toBe('turnWorkflow');
+  });
 });
