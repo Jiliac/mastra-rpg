@@ -1,8 +1,8 @@
-<!-- Generated: 2026-05-11 | Files scanned: ~80 | Token estimate: ~700 -->
+<!-- Generated: 2026-05-15 | Files scanned: ~85 | Token estimate: ~650 -->
 
 # Frontend
 
-Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Single chat surface in v0.
+Next.js 16 App Router, React 19, Tailwind v4, shadcn/ui. Single chat surface, currently wired to a stale weather-agent route — needs a UI rebuild in Wave 6.
 
 ## Page tree
 
@@ -27,6 +27,8 @@ ChatPage (chat/page.tsx)
 
 State source: `@ai-sdk/react` `useChat()` (messages, status, sendMessage, setMessages).
 
+**Note:** `/api/chat` references the removed `weather-agent` (see `backend.md`); the chat page will fail at runtime until Wave 5 lands `/api/turn` and the page is rewired (Wave 6 — RPG turn UI).
+
 ## Component library
 
 | Folder                        | Source                                                                         | Count |
@@ -34,7 +36,7 @@ State source: `@ai-sdk/react` `useChat()` (messages, status, sendMessage, setMes
 | `src/components/ui/`          | shadcn primitives (button, card, dialog, …)                                    | ~30   |
 | `src/components/ai-elements/` | AI Elements widgets (conversation, message, tool, reasoning, code-block, etc.) | ~50   |
 
-`ai-elements` are not yet wired into `chat/page.tsx` — currently a plain message list. They are pre-installed for upcoming RPG turn UI (artifact, plan, conversation, prompt-input, etc.).
+`ai-elements` are pre-installed but not yet wired into `chat/page.tsx` — reserved for the upcoming RPG turn UI (artifact panel, image embeds, dice/tool call rendering, faction badges, etc.).
 
 ## Styling
 
@@ -51,6 +53,7 @@ State source: `@ai-sdk/react` `useChat()` (messages, status, sendMessage, setMes
 
 ## Not yet implemented
 
-- RPG turn UI (artifacts panel, NPC sheet, faction trigger badge) — see Wave-2 spec
+- RPG turn UI (artifact pane, NPC sheet, faction trigger badge, image embeds, journal viewer)
 - Auth, multi-thread switcher, vault selector
-- Streaming progress indicator beyond `status === 'streaming'`
+- Streaming progress UI beyond `status === 'streaming'`
+- Replacement of `/api/chat` consumer with `/api/turn` (Wave 5/6)

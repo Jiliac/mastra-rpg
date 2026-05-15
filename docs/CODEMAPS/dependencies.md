@@ -1,4 +1,4 @@
-<!-- Generated: 2026-05-11 | Files scanned: package.json | Token estimate: ~600 -->
+<!-- Generated: 2026-05-15 | Files scanned: package.json | Token estimate: ~700 -->
 
 # Dependencies
 
@@ -6,22 +6,29 @@ Runtime requires Node `>=22.13.0`, pnpm.
 
 ## Mastra stack
 
-| Package                 | Role                                        |
-| ----------------------- | ------------------------------------------- |
-| `@mastra/core`          | Agents, workflows, tools, composite storage |
-| `@mastra/memory`        | Thread/resource memory abstraction          |
-| `@mastra/libsql`        | LibSQLStore (primary storage)               |
-| `@mastra/duckdb`        | DuckDBStore (observability traces)          |
-| `@mastra/loggers`       | PinoLogger                                  |
-| `@mastra/observability` | Exporters + SensitiveDataFilter             |
-| `@mastra/ai-sdk`        | `handleChatStream` + `toAISdkV5Messages`    |
-| `mastra`                | CLI / Studio                                |
+| Package                         | Role                                                                |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `@mastra/core` ^1.32.1          | Agents, tools, composite storage (no workflows yet used)            |
+| `@mastra/libsql` ^1.10.0        | LibSQLStore (primary storage)                                       |
+| `@mastra/duckdb` ^1.3.0         | DuckDBStore (observability traces)                                  |
+| `@mastra/loggers` ^1.1.1        | PinoLogger                                                          |
+| `@mastra/observability` ^1.11.1 | Exporters + SensitiveDataFilter                                     |
+| `@mastra/ai-sdk` ^1.4.1         | `handleChatStream` + `toAISdkV5Messages` (used in stale chat route) |
+| `mastra` ^1.8.1                 | CLI / Studio                                                        |
 
-## AI SDK + model
+`@mastra/memory` is **no longer a direct dependency** (was only used by the removed weather agent).
 
-- `ai@^6` (Vercel AI SDK)
-- `@ai-sdk/openai`, `@ai-sdk/react` (`useChat`)
-- Model spec: `openai/gpt-5.5` (in `weather-agent.ts`)
+## AI / model SDKs
+
+| Package               | Use                                                                           |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `ai` ^6.0.177         | Vercel AI SDK (`createUIMessageStreamResponse`)                               |
+| `@ai-sdk/openai` ^3   | OpenAI chat model wiring (model spec `openai/gpt-5.5`)                        |
+| `@ai-sdk/react` ^3    | `useChat` hook                                                                |
+| `openai` ^6.37.0      | Image generation (`gpt-image-2`) via `src/lib/media/image.ts`                 |
+| `@inworld/tts` ^1.1.1 | TTS (`inworld-tts-2`) via `src/lib/media/tts.ts` (not yet wired into runtime) |
+
+All three agents (`narrator`, `faction`, `illustrator`) target the `openai/gpt-5.5` model spec with `reasoningEffort: 'high'`.
 
 ## App framework
 
@@ -59,22 +66,33 @@ Runtime requires Node `>=22.13.0`, pnpm.
 
 ## Validation
 
-- `zod@^4` (tool I/O schemas + workflow step schemas)
+- `zod@^4.4.3` — tool I/O schemas (`createTool`) + agent `structuredOutput` schemas (`src/lib/schemas.ts`)
 
 ## Tooling
 
-- `vitest@^4` + `@vitest/coverage-v8` (test runner — see `vitest.config.ts`)
-- `prettier@^3.8`, `eslint-config-prettier`
-- `husky`, `lint-staged` (`.husky/pre-commit` → prettier + eslint --fix on staged files)
+- `vitest@^4.1.5` + `@vitest/coverage-v8` (`vitest.config.ts` enforces a coverage gate over the Wave-3 surface)
+- `prettier@^3.8.3`, `eslint-config-prettier`
+- `husky@^9`, `lint-staged@^17` (`.husky/pre-commit` → prettier + eslint --fix on staged files)
 
 ## External services
 
-| Service               | Used for                    | Auth                        |
-| --------------------- | --------------------------- | --------------------------- |
-| OpenAI                | LLM (`openai/gpt-5.5`)      | `OPENAI_API_KEY`            |
-| open-meteo (geo)      | Geocoding for weather tool  | none                        |
-| open-meteo (forecast) | Forecast data               | none                        |
-| Mastra Cloud (opt.)   | Studio observability export | `MASTRA_CLOUD_ACCESS_TOKEN` |
+| Service             | Used for                                                                      | Auth                        |
+| ------------------- | ----------------------------------------------------------------------------- | --------------------------- |
+| OpenAI Chat         | All three agents (`openai/gpt-5.5`)                                           | `OPENAI_API_KEY`            |
+| OpenAI Images       | `image` tool (`gpt-image-2`, quality `'high'`)                                | `OPENAI_API_KEY`            |
+| Inworld TTS         | `src/lib/media/tts.ts` (`inworld-tts-2`, OGG Opus); not yet called by runtime | `INWORLD_API_KEY`           |
+| Mastra Cloud (opt.) | Studio observability export                                                   | `MASTRA_CLOUD_ACCESS_TOKEN` |
+
+The previously listed open-meteo geocoding/forecast services are **gone** — they were only called by the removed weather tool.
+
+## Environment variables
+
+| Var                         | Required for                                   |
+| --------------------------- | ---------------------------------------------- |
+| `OPENAI_API_KEY`            | Any agent call; `image` tool                   |
+| `INWORLD_API_KEY`           | `tts.ts` (future runtime use)                  |
+| `VAULT_SLUG`                | `loadEntity` + `image` tool default vault root |
+| `MASTRA_CLOUD_ACCESS_TOKEN` | Cloud observability export (optional)          |
 
 ## Hooks / automation
 

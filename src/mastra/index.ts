@@ -12,11 +12,11 @@ import {
 import { narratorAgent } from './agents/narrator';
 import { factionAgent } from './agents/faction';
 import { illustratorAgent } from './agents/illustrator';
+import { turnWorkflow } from './workflows/turn';
 
 export const mastra = new Mastra({
-  // `workflows` is optional (Config.workflows?: TWorkflows). Omit it rather
-  // than pass `{}` — cleaner, no ambiguity. Wave 5 will add the workflow back.
   agents: { narratorAgent, factionAgent, illustratorAgent },
+  workflows: { turnWorkflow },
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: new LibSQLStore({
