@@ -18,7 +18,11 @@ export function isPhaseEvent(x: unknown): x is PhaseEvent {
   const o = x as Record<string, unknown>;
   switch (o.type) {
     case 'phase':
-      return typeof o.name === 'string' && PHASE_NAMES.has(o.name as PhaseName);
+      if (typeof o.name !== 'string' || !PHASE_NAMES.has(o.name as PhaseName)) return false;
+      // factions phase carries a numeric `count`; reducer reads it without a defensive
+      // check, so the guard must enforce it (other phase names have no extra fields).
+      if (o.name === 'factions' && typeof o.count !== 'number') return false;
+      return true;
     case 'prose_delta':
       return typeof o.text === 'string';
     case 'done':
