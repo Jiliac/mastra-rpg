@@ -10,8 +10,8 @@ import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 
 export default function Home() {
-  const slug = process.env.VAULT_SLUG;
-  if (slug && slug.trim().length > 0) {
+  const slug = process.env.VAULT_SLUG?.trim();
+  if (slug && slug.length > 0) {
     redirect(`/play/${encodeURIComponent(slug)}`);
   }
   return (
