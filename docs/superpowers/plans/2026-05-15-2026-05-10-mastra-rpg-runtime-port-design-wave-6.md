@@ -4,7 +4,7 @@
 
 **Goal:** Ship the player-facing surface: a Next.js App Router POST endpoint at `src/app/api/turn/route.ts` that runs the Wave-5 turn workflow and bridges its `PhaseEvent` stream onto an HTTP `text/event-stream`, plus a client page at `src/app/play/[slug]/page.tsx` that posts the player input, renders a phase tape, streams narrator prose, and shows audio + image embeds when the turn completes. The pair must satisfy the four Wave-6 exit criteria from the spec (end-to-end turn at `localhost:3000/play/commodore-vex`; phase tape + streaming prose + final media; SSE disconnect does NOT abort the workflow; mutex contention surfaces as a recoverable error and disables the input).
 
-**Architecture:** A thin `src/lib/sse/` module owns the wire format (`PhaseEvent` union, server-side serializer, client-side parser/state-reducer). The route handler at `src/app/api/turn/route.ts` constructs a `ReadableStream` that owns the workflow run; on `request.signal.abort` it does **NOT** abort the workflow (the spec's concurrency invariant #3 — client disconnect just stops writing to the response, the workflow continues to completion and persistence). The workflow is reached through a single seam `src/lib/sse/runner.ts` that exports `runTurn(input, emit)`; in production this calls `mastra.getWorkflowById('turnWorkflow').createRunAsync(...).start(...)` and pipes the workflow's stream to `emit`, but for Wave-6 (parallel with Wave 5) it is **mockable** via `process.env.RPG_RUNNER_MOCK === '1'` which routes to a deterministic `mockRunTurn` that emits the canonical `PhaseEvent` sequence with timed `prose_delta` chunks. That seam is the entire Wave-6/Wave-5 contract — when Wave 5 lands its `turnWorkflow` registration, the only edit Wave 6 needs is replacing the runner's body. The client page composes existing `src/components/ai-elements/*` primitives (`Conversation`, `Message`, `MessageResponse`, `PromptInput`, `Task` family, `AudioPlayer` family, `Image`) plus three small new pieces: a `PhaseTape` (collapsible list of phases with status icons), a `MutexBanner` (alert when the server reports the slug is busy), and a `TurnImages` strip (renders the illustrator's images by `path`, served via a tiny `src/app/api/turn/image/route.ts` GET endpoint that streams files out of the vault root with a strict path-traversal guard). The whole UI lives in one client component because state is small and tightly coupled to the SSE reader.
+**Architecture:** A thin `src/lib/sse/` module owns the wire format (`PhaseEvent` union, server-side serializer, client-side parser/state-reducer). The route handler at `src/app/api/turn/route.ts` constructs a `ReadableStream` that owns the workflow run; on `request.signal.abort` it does **NOT** abort the workflow (the spec's concurrency invariant #3 — client disconnect just stops writing to the response, the workflow continues to completion and persistence). The workflow is reached through a single seam `src/lib/sse/runner.ts` that exports `runTurn(input, emit)`; in production this imports `runTurn` directly from `@/mastra/workflows/turn` (the Wave-5 export) and constructs the workflow's `RunTurnDeps` (the three agents, `ttsRender`, and the `emit` callback) at call time. For Wave-6 (parallel-friendly even though Wave 5 is now merged) the runner remains **mockable** via `process.env.RPG_RUNNER_MOCK === '1'` which routes to a deterministic `mockRunTurn` that emits the canonical `PhaseEvent` sequence with timed `prose_delta` chunks. The route does **NOT** go through `mastra.getWorkflowById('turnWorkflow')` — direct import is simpler, gives strict typing, and matches how the workflow exports its public API. The client page composes existing `src/components/ai-elements/*` primitives (`Conversation`, `Message`, `MessageResponse`, `PromptInput`, `Task` family, `AudioPlayer` family, `Image`) plus three small new pieces: a `PhaseTape` (collapsible list of phases with status icons), a `MutexBanner` (alert when the server reports the slug is busy), and a `TurnImages` strip (renders the illustrator's images by `path`, served via a tiny `src/app/api/turn/image/route.ts` GET endpoint that streams files out of the vault root with a strict path-traversal guard). The whole UI lives in one client component because state is small and tightly coupled to the SSE reader.
 
 **Tech Stack:** TypeScript (ES2022 strict), Next.js 16 App Router, React 19, `'use client'` for the page, native `fetch` + `ReadableStream` for the client-side SSE reader (no `EventSource`, because POST + body — `EventSource` only does GET), Web Streams `TextEncoder`/`TextDecoder`, vitest for node-only unit tests of the serializer/parser/runner-mock. No new runtime dependencies — every UI primitive and `streamdown` already ship in `package.json`.
 
@@ -14,9 +14,9 @@
 
 - `src/lib/schemas.ts` — exports the `ImageMeta` Zod schema and inferred TS type. The `done` event embeds `images: ImageMeta[]` so the UI's `TurnImages` can iterate `.path`, `.filename`, `.prompt`, `.slug`. Imported as `import type { ImageMeta } from '@/lib/schemas';`.
 - `src/lib/vault/paths.ts` — exports `vaultRoot(slug: string)` returning `<cwd>/vaults/<slug>`. The image-serving route uses this plus `path.resolve` + a prefix-equality check on the resolved path to refuse traversal (`../../etc/passwd`).
-- `src/mastra/index.ts` — exports `mastra`. The runner imports this to call `mastra.getWorkflowById('turnWorkflow')` once Wave 5 registers it. **Do not edit this file in Wave 6.** Wave 5 is the only wave that mutates the Mastra registration; Wave 6 reads it through the public `getWorkflowById` accessor.
+- `src/mastra/index.ts` — exports `mastra`. Wave 5 already registered the three agents under the keys `narratorAgent`, `factionAgent`, `illustratorAgent` (verified at line 18 of `src/mastra/index.ts`). The Wave-6 runner imports those agents **directly** from their source modules (`@/mastra/agents/narrator`, `@/mastra/agents/faction`, `@/mastra/agents/illustrator`) rather than going through the Mastra registry — direct imports give strict typing and skip the runtime `getAgentById` lookup. **Do not edit `src/mastra/index.ts` in Wave 6.**
 
-**Wave-5 contract you produce against (mock-first, live later):** the workflow's emitted event stream — whatever shape Mastra's run stream takes — is reduced to the spec's `PhaseEvent` union by the runner seam. The union is the contract; the reduction lives in `runner.ts` and is the one place that changes between mock-mode and live-mode. The spec's union is reproduced verbatim in `src/lib/sse/events.ts` so even before Wave 5 merges, the route + UI are fully typed against the wire format.
+**Wave-5 contract (now MERGED at commit `f36cd02`):** the runner imports `runTurn`, `PhaseEvent`, `PhaseEventEmitter`, `RunTurnInput`, and `RunTurnDeps` directly from `@/mastra/workflows/turn`. Wave 5's `runTurn(input, deps)` accepts `{ vaultRoot: string; playerInput: string }` (note: **`vaultRoot` — an absolute path — not `slug`; `playerInput` not `input`**) plus a `RunTurnDeps` bag containing the three agents (shape: `AgentLike<T> = { generate(prompt: string): Promise<{ object: T }>; stream(prompt: string): Promise<AgentStreamLike<T>> }`), `ttsRender`, an `emit: PhaseEventEmitter` callback, and an optional `now` clock. All `PhaseEvent` emissions flow through `deps.emit` synchronously during the run. The resolved `RunTurnResult` (`{ status: 'success', ... } | { status: 'error', message, recoverable }`) is informational only — the meaningful state already flowed through `emit`. To preserve compile-time decoupling and keep the wire format singular, the local `src/lib/sse/events.ts` **re-exports** the type rather than duplicating it (`export { type PhaseEvent } from '@/mastra/workflows/turn'`) and keeps the `isPhaseEvent` runtime guard local (Wave 5 doesn't ship one).
 
 **What's already on disk in this branch (informational, not to be modified):**
 
@@ -90,11 +90,11 @@ Production files (all new):
 
 | File                                | Responsibility                                                                                                                                                                                                                                                                                                                                                          |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `src/lib/sse/events.ts`             | `PhaseEvent` discriminated-union type, verbatim from spec lines 288–297. No I/O. Pure types + a tiny runtime guard `isPhaseEvent(x: unknown)`.                                                                                                                                                                                                                          |
+| `src/lib/sse/events.ts`             | Re-exports `PhaseEvent` from `@/mastra/workflows/turn` (Wave 5's source of truth) and provides a local `isPhaseEvent(x: unknown)` runtime guard. No I/O. Single re-export line plus the guard implementation.                                                                                                                                                              |
 | `src/lib/sse/serialize.ts`          | `serializeEvent(ev: PhaseEvent): string` returns one SSE record (`event: <type>\ndata: <json>\n\n`). `serializeHeartbeat(): string` returns `: heartbeat\n\n` (comment line — keeps proxies happy across long narrator pauses).                                                                                                                                          |
 | `src/lib/sse/parse.ts`              | Pure parser: `parseSseChunks(buffer: string): { events: PhaseEvent[]; rest: string }`. Splits on `\n\n`, decodes each record's `event:` + `data:` lines, JSON-parses the payload, runs `isPhaseEvent` guard, drops malformed records. Used by the client reader.                                                                                                          |
 | `src/lib/sse/reducer.ts`            | Pure UI state reducer: `initialState()` + `reducePhaseEvent(state, ev): UiState`. Owns phase-tape state, accumulated prose, accumulated images, error state, done state. Node-testable — no React, no DOM.                                                                                                                                                              |
-| `src/lib/sse/runner.ts`             | The Wave-5/Wave-6 seam. Exports `runTurn(opts, emit): Promise<void>`. In `mock` mode (env flag or DI), emits a canonical event sequence with timed `prose_delta`s. In `live` mode, calls `mastra.getWorkflowById('turnWorkflow')` and reduces its output stream to `PhaseEvent`s. Crucially: **never accepts an `AbortSignal`** — concurrency invariant #3 is structural. |
+| `src/lib/sse/runner.ts`             | The Wave-5/Wave-6 seam. Exports `runTurn(opts, emit): Promise<void>`. In `mock` mode (env flag or DI), emits a canonical event sequence with timed `prose_delta`s. In `live` mode, calls `runTurn` imported directly from `@/mastra/workflows/turn`, constructing the workflow's `RunTurnDeps` from the three agent module imports plus `ttsRender` and the `emit` callback. Crucially: **never accepts an `AbortSignal`** — concurrency invariant #3 is structural. |
 | `src/app/api/turn/route.ts`         | `POST` handler. Reads `{ slug, input }` JSON body, creates a `ReadableStream`, kicks off `runTurn` (fire-and-forget; does NOT await), pipes its emissions through `serializeEvent` into the stream. Returns `new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'connection': 'keep-alive', 'x-accel-buffering': 'no' } })`. On `request.signal.abort` (client disconnect), closes the stream's writer but lets `runTurn` continue. |
 | `src/app/api/turn/image/route.ts`   | `GET` handler. Reads `?slug=<slug>&filename=<name>` query, resolves to `<vaultRoot(slug)>/images/<name>`, runs a strict prefix-equality check on the resolved absolute path, streams the file with `content-type: image/png`. 404s on traversal attempt or missing file. (Why a route: vault images live outside `public/`; we don't want Next to copy them, and the path is a runtime input.) |
 | `src/app/api/turn/audio/route.ts`   | `GET` handler. Same shape as the image route but serves `<vaultRoot(slug)>/audio/<name>` with `content-type: audio/ogg`. Used by `<AudioPlayerElement src=...>` on `done`.                                                                                                                                                                                              |
@@ -222,20 +222,12 @@ Expected: FAIL with `Cannot find module './events'` (or similar — files don't 
 // src/lib/sse/events.ts
 //
 // The PhaseEvent union is the wire contract between the turn workflow
-// (Wave 5) and the chat UI (Wave 6). Verbatim from the spec at
-// docs/superpowers/specs/2026-05-10-mastra-rpg-runtime-port-design.md
-// lines 288-297.
+// (Wave 5) and the chat UI (Wave 6). Wave 5 owns the type definition;
+// we re-export it here so the SSE module has a single import path
+// (`@/lib/sse/events`) for both the type and the runtime guard.
 
-import type { ImageMeta } from '@/lib/schemas';
-
-export type PhaseEvent =
-  | { type: 'phase'; name: 'factions'; count: number }
-  | { type: 'phase'; name: 'narrator' }
-  | { type: 'prose_delta'; text: string }
-  | { type: 'phase'; name: 'media' }
-  | { type: 'phase'; name: 'persist' }
-  | { type: 'done'; audioPath: string; finalProse: string; images: ImageMeta[] }
-  | { type: 'error'; message: string; recoverable: boolean };
+export { type PhaseEvent } from '@/mastra/workflows/turn';
+import type { PhaseEvent } from '@/mastra/workflows/turn';
 
 export type PhaseName = 'factions' | 'narrator' | 'media' | 'persist';
 
@@ -546,6 +538,16 @@ describe('reducePhaseEvent', () => {
     const s = step(initialState(), { type: 'phase', name: 'factions', count: 2 });
     expect(s.status).toBe('streaming');
     expect(s.phases).toEqual([{ name: 'factions', status: 'active', count: 2 }]);
+  });
+
+  it('factions phase with count=0 (player-alone path) preserves the zero', () => {
+    // Wave 5 explicitly emits { type: 'phase', name: 'factions', count: 0 }
+    // when no NPC factions are present. The reducer must preserve the
+    // zero count rather than dropping or defaulting it, so the phase tape
+    // can render the "you act alone" state distinctly.
+    const s = step(initialState(), { type: 'phase', name: 'factions', count: 0 });
+    expect(s.status).toBe('streaming');
+    expect(s.phases).toEqual([{ name: 'factions', status: 'active', count: 0 }]);
   });
 
   it('subsequent phase marks previous done and appends new active', () => {
@@ -912,26 +914,48 @@ export async function mockRunTurn(
 // ----- live implementation ------------------------------------------------
 
 /**
- * Live runner. Wired against the Wave-5 workflow registered as
- * `turnWorkflow` on the Mastra instance. **Not invoked by Wave-6 tests.**
- *
- * Wave 5 owns the body of this function. Wave 6 ships a stub that emits
- * a single recoverable error so a misconfigured deploy fails loudly
- * instead of silently 200ing with no events.
- *
- * The reduction from Mastra's run stream to PhaseEvent is the only
- * piece that needs to be filled in when W5 lands its workflow. The
- * spec's Per-turn workflow section (lines 174-284) describes which
- * step boundaries emit which event names; the workflow itself emits
- * via `writer.write(...)` or via the run's event stream — TBD by W5.
+ * Live runner. Wave 5 is MERGED (commit `f36cd02`) — this is the REAL
+ * body, not a stub. The implementer MUST verify `AgentLike<T>`
+ * structural compatibility with Mastra's concrete `Agent` class at
+ * code-write time. If `narratorAgent` does not structurally assign to
+ * `AgentLike<NarratorOutput>` (because Mastra's `generate`/`stream`
+ * returns extra fields or different shapes), write a tiny adapter
+ * `adaptMastraAgent<T>(agent): AgentLike<T>` (~10 LOC) and wrap each
+ * agent before passing into `deps`.
  */
-export async function liveRunTurn(_input: RunTurnInput, emit: Emit): Promise<void> {
-  emit({
-    type: 'error',
-    message:
-      'liveRunTurn not wired yet: Wave 5 must replace this stub with the workflow run.',
-    recoverable: false,
-  });
+import {
+  runTurn as workflowRunTurn,
+  type RunTurnInput as WorkflowInput,
+  type RunTurnDeps,
+} from '@/mastra/workflows/turn';
+import { narratorAgent } from '@/mastra/agents/narrator';
+import { factionAgent } from '@/mastra/agents/faction';
+import { illustratorAgent } from '@/mastra/agents/illustrator';
+import { vaultRoot } from '@/lib/vault/paths';
+import { ttsRender } from '@/lib/media/tts';
+
+export async function liveRunTurn(input: RunTurnInput, emit: Emit): Promise<void> {
+  const workflowInput: WorkflowInput = {
+    vaultRoot: vaultRoot(input.slug),
+    playerInput: input.input,
+  };
+  const deps: RunTurnDeps = {
+    // If the three lines below fail TypeScript: write a tiny adapter
+    //   `adaptMastraAgent<T>(agent: Agent): AgentLike<T>` that wraps
+    //   `agent.generate({ prompt, output: Z })` → `{ object }` and
+    //   `agent.stream(...)` → `{ textStream, object }`. ~10 LOC.
+    narratorAgent,
+    factionAgent,
+    illustratorAgent,
+    ttsRender,
+    emit,
+  };
+  const result = await workflowRunTurn(workflowInput, deps);
+  // All meaningful state already flowed through `emit` (done/error events).
+  // RunTurnResult is informational; log diagnostically on error.
+  if (result.status === 'error') {
+    console.warn('[liveRunTurn] workflow returned error result:', result.message);
+  }
 }
 
 // ----- top-level dispatcher -----------------------------------------------
@@ -2108,7 +2132,7 @@ Verify:
 - **`PromptInput` prop shape.** The ai-elements primitives evolve quickly; the names used in `play-client.tsx` were the ones present at planning time. If the build fails on an unknown prop, inspect the source file under `src/components/ai-elements/prompt-input.tsx` and adapt — the API surface is small (a textarea + a submit; everything else is optional).
 - **`MessageResponse` re-renders.** It's memoized on `children === children` reference equality. Each `prose_delta` creates a new string, which trips the comparison correctly, but if a future micro-optimization caches the string in a ref to avoid that, the message will stop streaming visually. Don't.
 - **Heartbeat cadence.** 15s is conservative for localhost-only v0. If proxies/load balancers ever enter the picture (v0.5), revisit — some Cloudflare-like setups want < 10s.
-- **Wave-5 contract drift.** If Wave 5 ships a different event shape than the spec's `PhaseEvent` union, only `runner.ts`'s `liveRunTurn` needs to change. Everything else (route, reducer, page) is downstream of that shape and remains untouched.
+- **`AgentLike<T>` structural compatibility with Mastra's `Agent`.** Wave 5 is merged and the `PhaseEvent` wire contract is locked. The single remaining contract risk is whether Mastra's concrete `Agent` class structurally assigns to Wave 5's `AgentLike<T> = { generate(prompt): Promise<{ object: T }>; stream(prompt): Promise<{ textStream, object }> }`. Wave 5's tests use mocks shaped to `AgentLike`, not the real `Agent`. If TypeScript rejects passing `narratorAgent` (etc.) into `RunTurnDeps`, the mitigation is a ~10-line `adaptMastraAgent<T>(agent): AgentLike<T>` helper inside `runner.ts` that wraps `agent.generate({ prompt, output: Z })` → `{ object }` and `agent.stream(...)` → `{ textStream, object }`. The plan's `liveRunTurn` body has a comment marking the exact line where the adapter would slot in.
 
 ---
 
