@@ -1,4 +1,4 @@
-<!-- Generated: 2026-05-15 | Files scanned: package.json | Token estimate: ~700 -->
+<!-- Generated: 2026-05-16 | Files scanned: package.json | Token estimate: ~750 -->
 
 # Dependencies
 
@@ -8,7 +8,7 @@ Runtime requires Node `>=22.13.0`, pnpm.
 
 | Package                         | Role                                                                |
 | ------------------------------- | ------------------------------------------------------------------- |
-| `@mastra/core` ^1.32.1          | Agents, tools, composite storage (no workflows yet used)            |
+| `@mastra/core` ^1.32.1          | Agents, tools, `createWorkflow`/`createStep`, composite storage     |
 | `@mastra/libsql` ^1.10.0        | LibSQLStore (primary storage)                                       |
 | `@mastra/duckdb` ^1.3.0         | DuckDBStore (observability traces)                                  |
 | `@mastra/loggers` ^1.1.1        | PinoLogger                                                          |
@@ -16,17 +16,17 @@ Runtime requires Node `>=22.13.0`, pnpm.
 | `@mastra/ai-sdk` ^1.4.1         | `handleChatStream` + `toAISdkV5Messages` (used in stale chat route) |
 | `mastra` ^1.8.1                 | CLI / Studio                                                        |
 
-`@mastra/memory` is **no longer a direct dependency** (was only used by the removed weather agent).
+`@mastra/memory` is **no longer a direct dependency** (the journal file IS the memory for the turn workflow).
 
 ## AI / model SDKs
 
-| Package               | Use                                                                           |
-| --------------------- | ----------------------------------------------------------------------------- |
-| `ai` ^6.0.177         | Vercel AI SDK (`createUIMessageStreamResponse`)                               |
-| `@ai-sdk/openai` ^3   | OpenAI chat model wiring (model spec `openai/gpt-5.5`)                        |
-| `@ai-sdk/react` ^3    | `useChat` hook                                                                |
-| `openai` ^6.37.0      | Image generation (`gpt-image-2`) via `src/lib/media/image.ts`                 |
-| `@inworld/tts` ^1.1.1 | TTS (`inworld-tts-2`) via `src/lib/media/tts.ts` (not yet wired into runtime) |
+| Package               | Use                                                                              |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `ai` ^6.0.177         | Vercel AI SDK (`createUIMessageStreamResponse`) — only used by stale `/api/chat` |
+| `@ai-sdk/openai` ^3   | OpenAI chat model wiring (model spec `openai/gpt-5.5`)                           |
+| `@ai-sdk/react` ^3    | `useChat` hook (only used in stale `/chat` page; `/play/[slug]` uses raw fetch)  |
+| `openai` ^6.37.0      | Image generation (`gpt-image-2`) via `src/lib/media/image.ts`                    |
+| `@inworld/tts` ^1.1.1 | TTS (`inworld-tts-2`) via `src/lib/media/tts.ts` (wired into turn workflow)      |
 
 All three agents (`narrator`, `faction`, `illustrator`) target the `openai/gpt-5.5` model spec with `reasoningEffort: 'high'`.
 
@@ -49,7 +49,7 @@ All three agents (`narrator`, `faction`, `illustrator`) target the `openai/gpt-5
 | `motion`                                                         | animation                           |
 | `@xyflow/react`                                                  | node-flow graphs                    |
 | `@rive-app/react-webgl2`                                         | Rive animations                     |
-| `media-chrome`                                                   | media player chrome                 |
+| `media-chrome`                                                   | media player chrome (audio-player)  |
 | `shadcn`                                                         | CLI                                 |
 | `react-jsx-parser`                                               | runtime JSX rendering for artifacts |
 
@@ -66,33 +66,32 @@ All three agents (`narrator`, `faction`, `illustrator`) target the `openai/gpt-5
 
 ## Validation
 
-- `zod@^4.4.3` — tool I/O schemas (`createTool`) + agent `structuredOutput` schemas (`src/lib/schemas.ts`)
+- `zod@^4.4.3` — tool I/O schemas (`createTool`), agent `structuredOutput` schemas (`src/lib/schemas.ts`), turn-workflow input/output schemas, and `/api/turn` request-body validation
 
 ## Tooling
 
-- `vitest@^4.1.5` + `@vitest/coverage-v8` (`vitest.config.ts` enforces a coverage gate over the Wave-3 surface)
+- `vitest@^4.1.5` + `@vitest/coverage-v8` (`vitest.config.ts` enforces a coverage gate)
 - `prettier@^3.8.3`, `eslint-config-prettier`
 - `husky@^9`, `lint-staged@^17` (`.husky/pre-commit` → prettier + eslint --fix on staged files)
 
 ## External services
 
-| Service             | Used for                                                                      | Auth                        |
-| ------------------- | ----------------------------------------------------------------------------- | --------------------------- |
-| OpenAI Chat         | All three agents (`openai/gpt-5.5`)                                           | `OPENAI_API_KEY`            |
-| OpenAI Images       | `image` tool (`gpt-image-2`, quality `'high'`)                                | `OPENAI_API_KEY`            |
-| Inworld TTS         | `src/lib/media/tts.ts` (`inworld-tts-2`, OGG Opus); not yet called by runtime | `INWORLD_API_KEY`           |
-| Mastra Cloud (opt.) | Studio observability export                                                   | `MASTRA_CLOUD_ACCESS_TOKEN` |
-
-The previously listed open-meteo geocoding/forecast services are **gone** — they were only called by the removed weather tool.
+| Service             | Used for                                                                    | Auth                        |
+| ------------------- | --------------------------------------------------------------------------- | --------------------------- |
+| OpenAI Chat         | All three agents (`openai/gpt-5.5`)                                         | `OPENAI_API_KEY`            |
+| OpenAI Images       | `image` tool (`gpt-image-2`, quality `'high'`)                              | `OPENAI_API_KEY`            |
+| Inworld TTS         | `src/lib/media/tts.ts` (`inworld-tts-2`, OGG Opus); called by turn workflow | `INWORLD_API_KEY`           |
+| Mastra Cloud (opt.) | Studio observability export                                                 | `MASTRA_CLOUD_ACCESS_TOKEN` |
 
 ## Environment variables
 
-| Var                         | Required for                                   |
-| --------------------------- | ---------------------------------------------- |
-| `OPENAI_API_KEY`            | Any agent call; `image` tool                   |
-| `INWORLD_API_KEY`           | `tts.ts` (future runtime use)                  |
-| `VAULT_SLUG`                | `loadEntity` + `image` tool default vault root |
-| `MASTRA_CLOUD_ACCESS_TOKEN` | Cloud observability export (optional)          |
+| Var                         | Required for                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`            | Any agent call; `image` tool                                                                                        |
+| `INWORLD_API_KEY`           | Narrator audio (`ttsRender` inside the turn workflow)                                                               |
+| `VAULT_SLUG`                | `loadEntity` + `image` tool default vault root                                                                      |
+| `MASTRA_CLOUD_ACCESS_TOKEN` | Cloud observability export (optional)                                                                               |
+| `RPG_RUNNER_MOCK`           | When `'1'`, `src/lib/sse/runner.ts` dispatches to `mockRunTurn` (no LLM/API cost). Used for local UI dev and tests. |
 
 ## Hooks / automation
 

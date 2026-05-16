@@ -1,104 +1,120 @@
-Codemap generation report — 2026-05-15 10:12 GMT+2
-Previous run: 2026-05-11 06:11 GMT+2
+Codemap generation report — 2026-05-16
 
-Scope of update: Waves 2, 3, and 4 all merged into main since the prior codemap
-snapshot. The change footprint exceeds 30% — all five codemaps were rewritten
-in place rather than incrementally diffed.
+Previous run: 2026-05-15 10:12 GMT+2 (post Wave 4)
+Current run:  2026-05-16          (post Waves 5 + 6)
+
+Scope of update: Waves 5 and 6 merged into main since the prior snapshot
+(commits 2adf018 and 392b96b). All five .md codemaps + codemap.html were
+refreshed in place.
 
 ================================================================================
-Files added since last scan (Waves 2+3+4)
+Files added since last scan
 ================================================================================
 
-Wave 2 (vault writes + state):
-  src/lib/vault/journal.ts        parseRecentEntries + appendJournal
-  src/lib/vault/playtests.ts      appendPlaytest → playtests/<YYYY-MM-DD>.md
-  src/lib/vault/stubs.ts          extractExcerpt + createStub (kind excludes 'image')
-  src/lib/vault/threads.ts        worldTick — atomic tmp+rename rewrite
-  src/lib/vault/turnId.ts         mintTurnId → "turn-NNN"
-  src/lib/vault/lock.ts           per-vault globalThis mutex (HMR-safe)
-  + sibling *.test.ts for each
+Wave 5 (turn workflow):
+  src/mastra/workflows/turn.ts             (~573 LOC)
+    runTurn(input, deps) — 5-step orchestrator, mutex held across all steps,
+    released in finally. turnWorkflow shell delegates to runTurn so Mastra
+    Studio observes the run. PhaseEvent contract:
+      phase{factions,narrator,media,persist} · prose_delta · done · error
+    Retry policies: generateWithRetry (silent fallback), streamNarratorWithRetry
+    (tagged NARRATOR_FAILED on 2nd fail), ttsWithRetry (200ms backoff, tagged
+    TTS_FAILED).
+  src/mastra/workflows/turn.test.ts        — 8 Layer-2 scenarios
+  src/mastra/workflows/turn.harness.ts     — copyFixtureVault + mock agents
 
-Wave 3 (dossier + schemas + media):
-  src/lib/dossier.ts              identifyOnStage + buildFactionDossier
-                                  + buildNarratorDossier + buildIllustratorDossier
-                                  + extractVisualBlock
-  src/lib/schemas.ts              FactionOutput, NarratorOutput, IllustratorOutput, ImageMeta
-                                  (Zod schemas + co-named TS type aliases)
-  src/lib/media/image.ts          OpenAI gpt-image-2 PNG generator
-  src/lib/media/tts.ts            Inworld inworld-tts-2 OGG Opus renderer
-  + sibling *.test.ts for each
+Wave 6 (API edge + chat UI + SSE module):
+  src/app/api/turn/route.ts                (~166 LOC)
+    POST /api/turn — Zod-validates {slug,input}, opens ReadableStream, installs
+    15s heartbeat, registers req.signal abort listener (clientGone flag — no
+    AbortSignal threaded to runner; workflow runs to completion).
+  src/app/api/turn/audio/route.ts          (~46 LOC)
+    GET — serves <vault>/audio/<file> as audio/ogg with path-traversal guard.
+  src/app/api/turn/image/route.ts          (~44 LOC)
+    GET — serves <vault>/images/<file> as image/png with path-traversal guard.
+  src/app/api/turn/{route,audio/route,image/route}.test.ts
 
-Wave 4 (Mastra tools + agents):
-  src/mastra/tools/dice.ts        NdM/pbta/advantage/disadvantage parser+roller
-  src/mastra/tools/loadEntity.ts  ENOENT-safe vault entity loader
-  src/mastra/tools/image.ts       Adapter over src/lib/media/image.ts
-  src/mastra/agents/narrator.ts   tools: loadEntity + dice; schema: NarratorOutput
-  src/mastra/agents/faction.ts    no tools; schema: FactionOutput
-  src/mastra/agents/illustrator.ts tools: image; schema: IllustratorOutput
-  + sibling *.test.ts for each
+  src/lib/sse/events.ts        PhaseEvent re-export + isPhaseEvent runtime guard
+  src/lib/sse/serialize.ts     SSE record + heartbeat writer
+  src/lib/sse/parse.ts         Tolerant chunk-reassembly parser (drops malformed)
+  src/lib/sse/reducer.ts       Pure UiState reducer (node-testable, no jsdom)
+  src/lib/sse/runner.ts        (~232 LOC)
+    Three-way dispatch: opts.runner > RPG_RUNNER_MOCK==='1' > liveRunTurn.
+    adaptMastraAgent bridges Mastra's concrete Agent to Wave-5's structural
+    AgentLike<T>; handles ReadableStream<string> → AsyncIterable<string>.
+  src/lib/sse/{parse,reducer,runner,serialize}.test.ts
+
+  src/app/play/[slug]/page.tsx              Server component; awaits params
+  src/app/play/[slug]/play-client.tsx       (~242 LOC) — useReducer, SSE
+                                            consumer, conversation + audio +
+                                            images + phase tape
+  src/app/play/[slug]/phase-tape.tsx        Right rail with status icons
+  src/app/play/[slug]/mutex-banner.tsx      Alert shown on 'still working'
+  src/app/play/[slug]/turn-images.tsx       Illustrator image grid
+
+================================================================================
+Files modified since last scan
+================================================================================
+
+  src/mastra/index.ts
+    + workflows: { turnWorkflow }  (the previously-omitted key is now populated)
 
 ================================================================================
 Files removed
 ================================================================================
 
-  src/mastra/agents/weather-agent.ts      (Wave 4 cleanup, c132a4a)
-  src/mastra/tools/weather-tool.ts        (Wave 4 cleanup, c132a4a)
-  src/mastra/workflows/weather-workflow.ts (Wave 4 cleanup, c132a4a)
-  src/mastra/workflows/                    directory removed
-  @mastra/memory                           dependency dropped (was used only by weather-agent)
-
-================================================================================
-Files modified
-================================================================================
-
-  src/mastra/index.ts
-    - Now registers agents: { narratorAgent, factionAgent, illustratorAgent }
-    - workflows key intentionally omitted (was `weatherWorkflow`); Wave 5 will reintroduce
-    - Storage, logger, observability config unchanged
-  src/mastra/index.test.ts
-    - Verifies registration of the three Wave-4 agents
-    - Asserts weatherAgent / weatherWorkflow absent
-  package.json
-    - Added: @inworld/tts ^1.1.1, openai ^6.37.0
-    - Removed: @mastra/memory
-
-================================================================================
-Latent issues surfaced
-================================================================================
-
-  src/app/api/chat/route.ts (both POST and GET)
-    Still references agentId: 'weather-agent' and mastra.getAgentById('weather-agent').
-    The weather agent no longer exists in the runtime — calls to /api/chat will
-    fail at runtime. The route is dead code until Wave 5 lands /api/turn.
-    Flagged in architecture.md, backend.md, frontend.md.
-
-================================================================================
-New external services / env vars
-================================================================================
-
-  +OpenAI Images        gpt-image-2 (quality=high) via image tool                OPENAI_API_KEY
-  +Inworld TTS          inworld-tts-2 OGG Opus via src/lib/media/tts.ts          INWORLD_API_KEY
-  +VAULT_SLUG env var   default vault root for loadEntity + image tools
-
-  -open-meteo (geocoding + forecast) — removed with weather tool
+  (none)
 
 ================================================================================
 Architecture changes
 ================================================================================
 
-  - Mastra runtime is no longer a starter weather demo; it is the RPG agent
-    suite (narrator + faction + illustrator) registered against Wave-1/2/3 vault
-    plumbing.
-  - The turn-orchestrating workflow (src/mastra/workflows/turn.ts) is the only
-    remaining piece before /api/turn can replace /api/chat — Wave 5 ticket.
-  - On-stage detection + dossier assembly is now a pure-TS layer in src/lib/
-    rather than embedded in agent prompts. The agents call it via the workflow
-    (when written); none of the three agents construct prompts themselves.
+  • End-to-end loop now live: /play/<slug> → POST /api/turn (SSE) → reducer
+    → audio (/api/turn/audio) + images (/api/turn/image) rendered in-browser.
+  • src/lib/media/tts.ts has graduated from "module present, not wired" to a
+    first-class workflow step (writes <vault>/audio/narrator-<turnId>.ogg via
+    ttsWithRetry; served back via /api/turn/audio).
+  • Concurrency invariant #3 is now implemented at the route level: client
+    disconnect flips clientGone and stops draining, but the workflow continues
+    so persists complete on the FS even after the client closes the tab.
+  • Mutex contention (acquireMutex returns false) surfaces as a recoverable
+    error {message:'still working'} — UI handles via MutexBanner.
+
+================================================================================
+New env toggles
+================================================================================
+
+  +RPG_RUNNER_MOCK=1   src/lib/sse/runner.ts dispatches to mockRunTurn
+                       (deterministic events, no LLM/API cost). Used for
+                       local UI development and route tests.
+
+  No new third-party services. No new top-level package dependencies.
+
+================================================================================
+Stale items (carried forward, slated for deletion in a future wave)
+================================================================================
+
+  src/app/api/chat/route.ts
+    Still references agentId: 'weather-agent' and mastra.getAgentById(...).
+    Will 500 at runtime. Replaced operationally by /api/turn.
+  src/app/chat/page.tsx
+    Starter chat page wired to /api/chat — no longer the entry point.
+    Live entry is /play/[slug].
+
+================================================================================
+HTML codemap (docs/CODEMAPS/codemap.html)
+================================================================================
+
+  • Added wave palette tokens --w5 (pink) and --w6 (sky-blue) + filter chips.
+  • New nodes: playPage, apiTurn, apiTurnAudio, apiTurnImage, sseModule,
+    turnWorkflow. chatPage + apiChat retained but tagged stale.
+  • Lane layout expanded to 8 lanes; viewBox now 1280×1020.
+  • Edge map refactored — workflow is the new hub (agents, lib, vault, mastra
+    index, sse runner). Auto-selection on load: turnWorkflow.
 
 ================================================================================
 Staleness signals
 ================================================================================
 
-  - /api/chat route: stale by ~4 days; carries a broken agentId reference.
-  - chat/page.tsx: still wired to /api/chat; needs rewire to /api/turn in Wave 6.
-  - No codemap has gone 90+ days without update — all five regenerated today.
+  No codemap has gone 90+ days without update — all six artifacts regenerated
+  today (2026-05-16).

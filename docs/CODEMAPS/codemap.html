@@ -21,7 +21,8 @@
         --w2: #a78bfa;
         --w3: #34d399;
         --w4: #fbbf24;
-        --w5: #6b7280;
+        --w5: #f472b6;
+        --w6: #38bdf8;
         --r-sm: 6px;
         --r-md: 10px;
         --r-lg: 16px;
@@ -55,7 +56,8 @@
           --w2: #7c3aed;
           --w3: #059669;
           --w4: #d97706;
-          --w5: #6b7280;
+          --w5: #db2777;
+          --w6: #0284c7;
         }
       }
       * {
@@ -75,7 +77,7 @@
         -webkit-font-smoothing: antialiased;
       }
       header {
-        max-width: 1280px;
+        max-width: 1320px;
         margin: 0 auto;
         padding: var(--s-6) var(--s-5) var(--s-3);
       }
@@ -108,14 +110,14 @@
         margin-bottom: var(--s-3);
       }
       .stage {
-        max-width: 1280px;
+        max-width: 1320px;
         margin: 0 auto;
         padding: 0 var(--s-5) var(--s-7);
         display: grid;
         grid-template-columns: 1fr 320px;
         gap: var(--s-5);
       }
-      @media (max-width: 1080px) {
+      @media (max-width: 1100px) {
         .stage {
           grid-template-columns: 1fr;
         }
@@ -180,7 +182,7 @@
         display: block;
         width: 100%;
         height: auto;
-        min-width: 880px;
+        min-width: 1040px;
       }
       .node {
         cursor: pointer;
@@ -227,7 +229,10 @@
         stroke: var(--w4);
       }
       .node.w5 rect {
-        stroke-dasharray: 4 3;
+        stroke: var(--w5);
+      }
+      .node.w6 rect {
+        stroke: var(--w6);
       }
       .node.stale rect {
         stroke: var(--bad);
@@ -362,6 +367,10 @@
         color: var(--w5);
         border-color: color-mix(in srgb, var(--w5) 40%, var(--line));
       }
+      .tag.w6 {
+        color: var(--w6);
+        border-color: color-mix(in srgb, var(--w6) 40%, var(--line));
+      }
       .files {
         list-style: none;
         margin: 0 0 var(--s-3);
@@ -417,17 +426,18 @@
   </head>
   <body>
     <header>
-      <div class="crumbs">docs/CODEMAPS/codemap.html · 2026-05-15</div>
+      <div class="crumbs">docs/CODEMAPS/codemap.html · 2026-05-16</div>
       <h1>mastra-rpg — Architecture map</h1>
       <p class="muted">
-        Next.js 16 + Mastra. Local-only RPG runtime ported from OpenClaw. Waves 1–4 merged on main;
-        Wave 5 (turn workflow) is the next ticket. Click a node to inspect.
+        Next.js 16 + Mastra. Local-only RPG runtime ported from OpenClaw. Waves 1–6 are merged on
+        main. End-to-end loop is live at <code>/play/&lt;slug&gt;</code>. Click a node to inspect.
       </p>
       <div class="tldr">
-        <strong>State of play.</strong> Three agents (narrator, faction, illustrator) and three
-        tools (dice, loadEntity, image) are registered and tested. Vault library is complete. The
-        orchestrating workflow does not exist yet — until Wave 5 lands, <code>/api/chat</code> is
-        the only HTTP entry and it still names the deleted <code>weather-agent</code>.
+        <strong>State of play.</strong> A player POSTs a turn to <code>/api/turn</code>; the route
+        SSE-bridges PhaseEvents from <code>runTurn</code> (5 steps, mutex held throughout) back to a
+        React reducer in <code>/play/[slug]</code>. Audio + image assets are served from
+        <code>/api/turn/{audio,image}</code>. The starter <code>/api/chat</code> route is still
+        present but stale (references the deleted weather-agent) and is slated for deletion.
       </div>
     </header>
 
@@ -437,24 +447,27 @@
           <span class="label">Highlight wave</span>
           <button class="chip" data-wave="all" aria-pressed="true">All</button>
           <button class="chip" data-wave="1" aria-pressed="false">
-            <span class="dot" style="background: var(--w1)"></span>Wave 1 · parse
+            <span class="dot" style="background: var(--w1)"></span>1 · parse
           </button>
           <button class="chip" data-wave="2" aria-pressed="false">
-            <span class="dot" style="background: var(--w2)"></span>Wave 2 · state
+            <span class="dot" style="background: var(--w2)"></span>2 · state
           </button>
           <button class="chip" data-wave="3" aria-pressed="false">
-            <span class="dot" style="background: var(--w3)"></span>Wave 3 · lib
+            <span class="dot" style="background: var(--w3)"></span>3 · lib
           </button>
           <button class="chip" data-wave="4" aria-pressed="false">
-            <span class="dot" style="background: var(--w4)"></span>Wave 4 · agents
+            <span class="dot" style="background: var(--w4)"></span>4 · agents
           </button>
           <button class="chip" data-wave="5" aria-pressed="false">
-            <span class="dot" style="background: var(--w5)"></span>Wave 5 · next
+            <span class="dot" style="background: var(--w5)"></span>5 · workflow
+          </button>
+          <button class="chip" data-wave="6" aria-pressed="false">
+            <span class="dot" style="background: var(--w6)"></span>6 · API + UI
           </button>
         </div>
 
         <div class="map-wrap">
-          <svg class="map" viewBox="0 0 1180 780" role="img" aria-label="Module map of mastra-rpg">
+          <svg class="map" viewBox="0 0 1280 1020" role="img" aria-label="Module map of mastra-rpg">
             <defs>
               <marker
                 id="arrow"
@@ -493,115 +506,176 @@
 
             <!-- Lane dividers -->
             <g aria-hidden="true">
-              <line class="lane" x1="20" y1="80" x2="1160" y2="80" />
-              <line class="lane" x1="20" y1="200" x2="1160" y2="200" />
-              <line class="lane" x1="20" y1="380" x2="1160" y2="380" />
-              <line class="lane" x1="20" y1="540" x2="1160" y2="540" />
-              <line class="lane" x1="20" y1="680" x2="1160" y2="680" />
-              <text class="lane-label" x="28" y="42">UI / Edge</text>
-              <text class="lane-label" x="28" y="98">Mastra runtime</text>
-              <text class="lane-label" x="28" y="218">Tools</text>
-              <text class="lane-label" x="28" y="398">Lib (dossier · schemas · media)</text>
-              <text class="lane-label" x="28" y="558">Vault library (src/lib/vault)</text>
-              <text class="lane-label" x="28" y="698">Persistence</text>
+              <line class="lane" x1="20" y1="90" x2="1260" y2="90" />
+              <line class="lane" x1="20" y1="180" x2="1260" y2="180" />
+              <line class="lane" x1="20" y1="270" x2="1260" y2="270" />
+              <line class="lane" x1="20" y1="360" x2="1260" y2="360" />
+              <line class="lane" x1="20" y1="450" x2="1260" y2="450" />
+              <line class="lane" x1="20" y1="540" x2="1260" y2="540" />
+              <line class="lane" x1="20" y1="710" x2="1260" y2="710" />
+              <line class="lane" x1="20" y1="810" x2="1260" y2="810" />
+              <text class="lane-label" x="28" y="42">UI surface</text>
+              <text class="lane-label" x="28" y="108">API edge (route handlers)</text>
+              <text class="lane-label" x="28" y="198">SSE module (wire + reducer)</text>
+              <text class="lane-label" x="28" y="288">Mastra runtime + workflow</text>
+              <text class="lane-label" x="28" y="378">Agents</text>
+              <text class="lane-label" x="28" y="468">Tools</text>
+              <text class="lane-label" x="28" y="558">Lib (dossier · schemas · media)</text>
+              <text class="lane-label" x="28" y="728">Vault library (src/lib/vault)</text>
+              <text class="lane-label" x="28" y="828">Persistence</text>
             </g>
 
             <!-- Edges (drawn first so nodes sit on top) -->
             <g id="edges" color="var(--ink-dim)">
-              <!-- Stale: page → api/chat → (gone) -->
-              <path class="edge" data-edge="ui" d="M180,55 L370,55" marker-end="url(#arrow)" />
+              <!-- Browser → play & chat -->
+              <path class="edge" data-edge="ui" d="M180,55 L240,55" marker-end="url(#arrow)" />
               <path
                 class="edge stale"
-                data-edge="stale"
-                d="M540,55 L540,108"
+                data-edge="stale-ui"
+                d="M180,55 L500,55"
                 marker-end="url(#arrow-bad)"
               />
 
-              <!-- index.ts registers agents -->
-              <path class="edge" data-edge="reg" d="M540,158 L260,210" marker-end="url(#arrow)" />
-              <path class="edge" data-edge="reg" d="M540,158 L540,210" marker-end="url(#arrow)" />
-              <path class="edge" data-edge="reg" d="M540,158 L820,210" marker-end="url(#arrow)" />
+              <!-- Pages → API -->
+              <path class="edge" data-edge="ui" d="M330,80 L220,108" marker-end="url(#arrow)" />
+              <path
+                class="edge"
+                data-edge="ui-audio"
+                d="M380,80 L400,108"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="ui-image"
+                d="M420,80 L580,108"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge stale"
+                data-edge="stale"
+                d="M580,80 L780,108"
+                marker-end="url(#arrow-bad)"
+              />
 
-              <!-- Agents → Tools -->
-              <path class="edge" data-edge="tools" d="M260,260 L160,300" marker-end="url(#arrow)" />
-              <path class="edge" data-edge="tools" d="M260,260 L380,300" marker-end="url(#arrow)" />
-              <path class="edge" data-edge="tools" d="M820,260 L640,300" marker-end="url(#arrow)" />
+              <!-- /api/turn → SSE module / runner -->
+              <path class="edge" data-edge="sse" d="M220,160 L220,200" marker-end="url(#arrow)" />
+              <!-- runner → workflow -->
+              <path
+                class="edge"
+                data-edge="sse-runner"
+                d="M580,240 L580,290"
+                marker-end="url(#arrow)"
+              />
 
-              <!-- Agents → schemas (structuredOutput) -->
+              <!-- index.ts ↔ workflow -->
+              <path class="edge" data-edge="reg" d="M780,310 L580,310" marker-end="url(#arrow)" />
+
+              <!-- workflow → agents -->
+              <path
+                class="edge"
+                data-edge="wf-agent"
+                d="M580,340 L260,378"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="wf-agent"
+                d="M580,340 L540,378"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="wf-agent"
+                d="M580,340 L820,378"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- agents → tools -->
+              <path class="edge" data-edge="tools" d="M260,428 L160,468" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="tools" d="M260,428 L380,468" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="tools" d="M820,428 L640,468" marker-end="url(#arrow)" />
+
+              <!-- agents → schemas -->
               <path
                 class="edge"
                 data-edge="schemas"
-                d="M260,260 L300,415"
+                d="M260,428 L300,557"
                 marker-end="url(#arrow)"
               />
               <path
                 class="edge"
                 data-edge="schemas"
-                d="M540,260 L300,415"
+                d="M540,428 L300,557"
                 marker-end="url(#arrow)"
               />
               <path
                 class="edge"
                 data-edge="schemas"
-                d="M820,260 L300,415"
+                d="M820,428 L300,557"
                 marker-end="url(#arrow)"
               />
 
-              <!-- Tools → lib/media/image -->
-              <path class="edge" data-edge="image" d="M640,335 L640,415" marker-end="url(#arrow)" />
+              <!-- workflow → dossier, schemas, media/tts -->
+              <path
+                class="edge"
+                data-edge="wf-lib"
+                d="M540,340 L120,557"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="wf-lib"
+                d="M580,340 L300,557"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="wf-lib"
+                d="M620,340 L830,557"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- workflow → vault lib (lock, journal, threads, playtests, stubs, turnId) -->
+              <path
+                class="edge"
+                data-edge="wf-vault"
+                d="M580,340 L580,665"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- image tool → media/image -->
+              <path class="edge" data-edge="image" d="M640,495 L640,557" marker-end="url(#arrow)" />
+              <!-- loadEntity → vault -->
+              <path class="edge" data-edge="vault" d="M380,495 L380,665" marker-end="url(#arrow)" />
+              <!-- image tool → vault/paths -->
+              <path class="edge" data-edge="vault" d="M640,495 L240,665" marker-end="url(#arrow)" />
+
+              <!-- dossier → vault parsers -->
+              <path
+                class="edge"
+                data-edge="dossier"
+                d="M120,580 L140,665"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="dossier"
+                d="M120,580 L520,665"
+                marker-end="url(#arrow)"
+              />
+
               <!-- media/image → OpenAI -->
               <path
                 class="edge"
                 data-edge="image"
-                d="M720,440 L1040,440"
+                d="M720,580 L1100,580"
                 marker-end="url(#arrow)"
               />
               <!-- media/tts → Inworld -->
               <path
                 class="edge"
                 data-edge="image"
-                d="M880,440 L1040,520"
-                marker-end="url(#arrow)"
-              />
-
-              <!-- loadEntity → vault/entities -->
-              <path class="edge" data-edge="vault" d="M380,335 L380,580" marker-end="url(#arrow)" />
-              <!-- image tool → vault/paths -->
-              <path class="edge" data-edge="vault" d="M640,335 L240,580" marker-end="url(#arrow)" />
-
-              <!-- dossier → vault parsers (multi) -->
-              <path
-                class="edge"
-                data-edge="dossier"
-                d="M120,440 L140,580"
-                marker-end="url(#arrow)"
-              />
-              <path
-                class="edge"
-                data-edge="dossier"
-                d="M120,440 L520,580"
-                marker-end="url(#arrow)"
-              />
-
-              <!-- agents → mastra storage (memory via index.ts) -->
-              <path
-                class="edge"
-                data-edge="storage"
-                d="M540,158 L660,700"
-                marker-end="url(#arrow)"
-              />
-              <path
-                class="edge"
-                data-edge="storage"
-                d="M540,158 L880,700"
-                marker-end="url(#arrow)"
-              />
-
-              <!-- vault library → vault FS -->
-              <path
-                class="edge"
-                data-edge="vaultfs"
-                d="M580,640 L240,700"
+                d="M920,580 L1100,665"
                 marker-end="url(#arrow)"
               />
 
@@ -609,19 +683,44 @@
               <path
                 class="edge"
                 data-edge="openai"
-                d="M260,210 L1040,360"
+                d="M340,400 L1100,520"
                 marker-end="url(#arrow)"
               />
               <path
                 class="edge"
                 data-edge="openai"
-                d="M540,210 L1040,360"
+                d="M620,400 L1100,520"
                 marker-end="url(#arrow)"
               />
               <path
                 class="edge"
                 data-edge="openai"
-                d="M820,210 L1040,360"
+                d="M900,400 L1100,520"
+                marker-end="url(#arrow)"
+              />
+
+              <!-- vault library → vault FS -->
+              <path
+                class="edge"
+                data-edge="vaultfs"
+                d="M580,800 L240,830"
+                marker-end="url(#arrow)"
+              />
+              <!-- /api/turn/audio + /image → vaultFs -->
+              <path class="edge" data-edge="asset" d="M400,160 L240,830" marker-end="url(#arrow)" />
+              <path class="edge" data-edge="asset" d="M580,160 L240,830" marker-end="url(#arrow)" />
+
+              <!-- index.ts → storage -->
+              <path
+                class="edge"
+                data-edge="storage"
+                d="M780,310 L660,830"
+                marker-end="url(#arrow)"
+              />
+              <path
+                class="edge"
+                data-edge="storage"
+                d="M780,310 L880,830"
                 marker-end="url(#arrow)"
               />
             </g>
@@ -632,104 +731,155 @@
               <g class="node" data-id="browser" data-wave="all" tabindex="0">
                 <rect x="40" y="30" width="140" height="50" rx="10" />
                 <text class="title" x="110" y="55" text-anchor="middle">Browser</text>
-                <text class="sub" x="110" y="70" text-anchor="middle">useChat()</text>
+                <text class="sub" x="110" y="70" text-anchor="middle">fetch SSE · reducer</text>
               </g>
-              <g class="node" data-id="chatPage" data-wave="all" tabindex="0">
-                <rect x="220" y="30" width="180" height="50" rx="10" />
-                <text class="title" x="310" y="52" text-anchor="middle">src/app/chat/page.tsx</text>
-                <text class="sub" x="310" y="70" text-anchor="middle">
-                  'use client' · POST/GET /api/chat
+              <g class="node w6" data-id="playPage" data-wave="6" tabindex="0">
+                <rect x="240" y="30" width="220" height="50" rx="10" />
+                <text class="title" x="350" y="52" text-anchor="middle">src/app/play/[slug]/</text>
+                <text class="sub" x="350" y="70" text-anchor="middle">
+                  PlayClient · PhaseTape · audio + images
                 </text>
+              </g>
+              <g class="node stale" data-id="chatPage" data-wave="all" tabindex="0">
+                <rect x="500" y="30" width="200" height="50" rx="10" />
+                <text class="title" x="600" y="52" text-anchor="middle">src/app/chat/page.tsx</text>
+                <text class="sub" x="600" y="70" text-anchor="middle">
+                  ⚠ starter — talks to /api/chat
+                </text>
+              </g>
+
+              <!-- API edge -->
+              <g class="node w6" data-id="apiTurn" data-wave="6" tabindex="0">
+                <rect x="120" y="108" width="200" height="52" rx="10" />
+                <text class="title" x="220" y="130" text-anchor="middle">/api/turn (POST)</text>
+                <text class="sub" x="220" y="148" text-anchor="middle">
+                  SSE · 15s heartbeat · zod body
+                </text>
+              </g>
+              <g class="node w6" data-id="apiTurnAudio" data-wave="6" tabindex="0">
+                <rect x="340" y="108" width="180" height="52" rx="10" />
+                <text class="title" x="430" y="130" text-anchor="middle">
+                  /api/turn/audio (GET)
+                </text>
+                <text class="sub" x="430" y="148" text-anchor="middle">audio/ogg · guarded</text>
+              </g>
+              <g class="node w6" data-id="apiTurnImage" data-wave="6" tabindex="0">
+                <rect x="540" y="108" width="180" height="52" rx="10" />
+                <text class="title" x="630" y="130" text-anchor="middle">
+                  /api/turn/image (GET)
+                </text>
+                <text class="sub" x="630" y="148" text-anchor="middle">image/png · guarded</text>
               </g>
               <g class="node stale" data-id="apiChat" data-wave="all" tabindex="0">
-                <rect x="440" y="30" width="200" height="50" rx="10" />
-                <text class="title" x="540" y="52" text-anchor="middle">
-                  src/app/api/chat/route.ts
+                <rect x="760" y="108" width="200" height="52" rx="10" />
+                <text class="title" x="860" y="130" text-anchor="middle">
+                  /api/chat (POST · GET)
                 </text>
-                <text class="sub" x="540" y="70" text-anchor="middle">
+                <text class="sub" x="860" y="148" text-anchor="middle">
                   ⚠ refs deleted weather-agent
                 </text>
               </g>
 
-              <!-- Mastra runtime -->
-              <g class="node w4" data-id="mastraIndex" data-wave="4" tabindex="0">
-                <rect x="440" y="108" width="200" height="50" rx="10" />
-                <text class="title" x="540" y="130" text-anchor="middle">src/mastra/index.ts</text>
-                <text class="sub" x="540" y="148" text-anchor="middle">
-                  agents · storage · observability
+              <!-- SSE module -->
+              <g class="node w6" data-id="sseModule" data-wave="6" tabindex="0">
+                <rect x="120" y="195" width="700" height="60" rx="10" />
+                <text class="title" x="140" y="218" text-anchor="start">src/lib/sse/</text>
+                <text
+                  class="sub"
+                  x="140"
+                  y="236"
+                  text-anchor="start"
+                  style="font-family: var(--font-mono)"
+                >
+                  events · serialize · parse · reducer · runner (mock | live dispatch)
                 </text>
+                <text class="sub" x="140" y="251" text-anchor="start">click for module list →</text>
+              </g>
+
+              <!-- Mastra runtime -->
+              <g class="node w5" data-id="turnWorkflow" data-wave="5" tabindex="0">
+                <rect x="440" y="285" width="280" height="56" rx="10" />
+                <text class="title" x="580" y="308" text-anchor="middle">
+                  workflows/turn.ts · runTurn
+                </text>
+                <text class="sub" x="580" y="326" text-anchor="middle">
+                  5 steps · mutex · PhaseEvent emit
+                </text>
+              </g>
+              <g class="node w4" data-id="mastraIndex" data-wave="4" tabindex="0">
+                <rect x="780" y="285" width="200" height="56" rx="10" />
+                <text class="title" x="880" y="308" text-anchor="middle">src/mastra/index.ts</text>
+                <text class="sub" x="880" y="326" text-anchor="middle">agents + turnWorkflow</text>
               </g>
 
               <!-- Agents -->
               <g class="node w4" data-id="narrator" data-wave="4" tabindex="0">
-                <rect x="170" y="210" width="180" height="50" rx="10" />
-                <text class="title" x="260" y="232" text-anchor="middle">narratorAgent</text>
-                <text class="sub" x="260" y="250" text-anchor="middle">
+                <rect x="160" y="378" width="200" height="50" rx="10" />
+                <text class="title" x="260" y="400" text-anchor="middle">narratorAgent</text>
+                <text class="sub" x="260" y="418" text-anchor="middle">
                   tools: loadEntity, dice
                 </text>
               </g>
               <g class="node w4" data-id="faction" data-wave="4" tabindex="0">
-                <rect x="450" y="210" width="180" height="50" rx="10" />
-                <text class="title" x="540" y="232" text-anchor="middle">factionAgent</text>
-                <text class="sub" x="540" y="250" text-anchor="middle">no tools</text>
+                <rect x="440" y="378" width="200" height="50" rx="10" />
+                <text class="title" x="540" y="400" text-anchor="middle">factionAgent</text>
+                <text class="sub" x="540" y="418" text-anchor="middle">no tools</text>
               </g>
               <g class="node w4" data-id="illustrator" data-wave="4" tabindex="0">
-                <rect x="730" y="210" width="180" height="50" rx="10" />
-                <text class="title" x="820" y="232" text-anchor="middle">illustratorAgent</text>
-                <text class="sub" x="820" y="250" text-anchor="middle">tools: image</text>
+                <rect x="720" y="378" width="200" height="50" rx="10" />
+                <text class="title" x="820" y="400" text-anchor="middle">illustratorAgent</text>
+                <text class="sub" x="820" y="418" text-anchor="middle">tools: image</text>
               </g>
 
               <!-- Tools -->
               <g class="node w4" data-id="dice" data-wave="4" tabindex="0">
-                <rect x="80" y="300" width="160" height="46" rx="10" />
-                <text class="title" x="160" y="322" text-anchor="middle">tools/dice</text>
-                <text class="sub" x="160" y="338" text-anchor="middle">NdM · pbta · adv/dis</text>
+                <rect x="80" y="468" width="160" height="46" rx="10" />
+                <text class="title" x="160" y="490" text-anchor="middle">tools/dice</text>
+                <text class="sub" x="160" y="506" text-anchor="middle">NdM · pbta · adv/dis</text>
               </g>
               <g class="node w4" data-id="loadEntity" data-wave="4" tabindex="0">
-                <rect x="300" y="300" width="160" height="46" rx="10" />
-                <text class="title" x="380" y="322" text-anchor="middle">tools/loadEntity</text>
-                <text class="sub" x="380" y="338" text-anchor="middle">ENOENT → found:false</text>
+                <rect x="300" y="468" width="160" height="46" rx="10" />
+                <text class="title" x="380" y="490" text-anchor="middle">tools/loadEntity</text>
+                <text class="sub" x="380" y="506" text-anchor="middle">ENOENT → found:false</text>
               </g>
               <g class="node w4" data-id="imageTool" data-wave="4" tabindex="0">
-                <rect x="560" y="300" width="160" height="46" rx="10" />
-                <text class="title" x="640" y="322" text-anchor="middle">tools/image</text>
-                <text class="sub" x="640" y="338" text-anchor="middle">→ media/image.ts</text>
+                <rect x="560" y="468" width="160" height="46" rx="10" />
+                <text class="title" x="640" y="490" text-anchor="middle">tools/image</text>
+                <text class="sub" x="640" y="506" text-anchor="middle">→ media/image.ts</text>
               </g>
 
               <!-- Lib layer -->
               <g class="node w3" data-id="dossier" data-wave="3" tabindex="0">
-                <rect x="40" y="415" width="160" height="50" rx="10" />
-                <text class="title" x="120" y="437" text-anchor="middle">lib/dossier.ts</text>
-                <text class="sub" x="120" y="455" text-anchor="middle">
+                <rect x="40" y="557" width="160" height="50" rx="10" />
+                <text class="title" x="120" y="579" text-anchor="middle">lib/dossier.ts</text>
+                <text class="sub" x="120" y="597" text-anchor="middle">
                   identifyOnStage · builders
                 </text>
               </g>
               <g class="node w3" data-id="schemas" data-wave="3" tabindex="0">
-                <rect x="220" y="415" width="160" height="50" rx="10" />
-                <text class="title" x="300" y="437" text-anchor="middle">lib/schemas.ts</text>
-                <text class="sub" x="300" y="455" text-anchor="middle">Zod output schemas</text>
+                <rect x="220" y="557" width="160" height="50" rx="10" />
+                <text class="title" x="300" y="579" text-anchor="middle">lib/schemas.ts</text>
+                <text class="sub" x="300" y="597" text-anchor="middle">Zod output schemas</text>
               </g>
               <g class="node w3" data-id="mediaImage" data-wave="3" tabindex="0">
-                <rect x="560" y="415" width="160" height="50" rx="10" />
-                <text class="title" x="640" y="437" text-anchor="middle">lib/media/image.ts</text>
-                <text class="sub" x="640" y="455" text-anchor="middle">gpt-image-2 PNG</text>
+                <rect x="560" y="557" width="160" height="50" rx="10" />
+                <text class="title" x="640" y="579" text-anchor="middle">lib/media/image.ts</text>
+                <text class="sub" x="640" y="597" text-anchor="middle">gpt-image-2 PNG</text>
               </g>
               <g class="node w3" data-id="mediaTts" data-wave="3" tabindex="0">
-                <rect x="740" y="415" width="180" height="50" rx="10" />
-                <text class="title" x="830" y="437" text-anchor="middle">lib/media/tts.ts</text>
-                <text class="sub" x="830" y="455" text-anchor="middle">
-                  inworld-tts-2 · unwired
-                </text>
+                <rect x="740" y="557" width="180" height="50" rx="10" />
+                <text class="title" x="830" y="579" text-anchor="middle">lib/media/tts.ts</text>
+                <text class="sub" x="830" y="597" text-anchor="middle">inworld-tts-2 · OGG</text>
               </g>
 
               <!-- Vault library box (composite) -->
               <g class="node w1" data-id="vaultLib" data-wave="1" tabindex="0">
-                <rect x="40" y="575" width="1080" height="90" rx="10" />
-                <text class="title" x="60" y="598" text-anchor="start">src/lib/vault/</text>
+                <rect x="40" y="715" width="1200" height="90" rx="10" />
+                <text class="title" x="60" y="738" text-anchor="start">src/lib/vault/</text>
                 <text
                   class="sub"
                   x="60"
-                  y="616"
+                  y="756"
                   text-anchor="start"
                   style="font-family: var(--font-mono)"
                 >
@@ -738,46 +888,46 @@
                 <text
                   class="sub"
                   x="60"
-                  y="634"
+                  y="774"
                   text-anchor="start"
                   style="font-family: var(--font-mono)"
                 >
                   Wave 2 · journal · playtests · threads · stubs · turnId · lock
                 </text>
-                <text class="sub" x="60" y="652" text-anchor="start">click for module list →</text>
+                <text class="sub" x="60" y="792" text-anchor="start">click for module list →</text>
               </g>
 
               <!-- Persistence -->
               <g class="node" data-id="libsql" data-wave="all" tabindex="0">
-                <rect x="560" y="700" width="200" height="50" rx="10" />
-                <text class="title" x="660" y="722" text-anchor="middle">mastra.db (LibSQL)</text>
-                <text class="sub" x="660" y="740" text-anchor="middle">
+                <rect x="560" y="830" width="200" height="50" rx="10" />
+                <text class="title" x="660" y="852" text-anchor="middle">mastra.db (LibSQL)</text>
+                <text class="sub" x="660" y="870" text-anchor="middle">
                   threads · messages · state
                 </text>
               </g>
               <g class="node" data-id="duckdb" data-wave="all" tabindex="0">
-                <rect x="780" y="700" width="200" height="50" rx="10" />
-                <text class="title" x="880" y="722" text-anchor="middle">mastra.duckdb</text>
-                <text class="sub" x="880" y="740" text-anchor="middle">observability traces</text>
+                <rect x="780" y="830" width="200" height="50" rx="10" />
+                <text class="title" x="880" y="852" text-anchor="middle">mastra.duckdb</text>
+                <text class="sub" x="880" y="870" text-anchor="middle">observability traces</text>
               </g>
               <g class="node" data-id="vaultFs" data-wave="all" tabindex="0">
-                <rect x="40" y="700" width="380" height="50" rx="10" />
-                <text class="title" x="230" y="722" text-anchor="middle">vaults/&lt;slug&gt;/</text>
-                <text class="sub" x="230" y="740" text-anchor="middle">
-                  XML · MD · images · playtests · .turn-counter
+                <rect x="40" y="830" width="380" height="50" rx="10" />
+                <text class="title" x="230" y="852" text-anchor="middle">vaults/&lt;slug&gt;/</text>
+                <text class="sub" x="230" y="870" text-anchor="middle">
+                  XML · MD · images/ · audio/ · playtests/
                 </text>
               </g>
 
               <!-- External services -->
               <g class="node ext" data-id="openai" data-wave="all" tabindex="0">
-                <rect x="1000" y="330" width="160" height="50" rx="10" />
-                <text class="title" x="1080" y="352" text-anchor="middle">OpenAI</text>
-                <text class="sub" x="1080" y="370" text-anchor="middle">gpt-5.5 · gpt-image-2</text>
+                <rect x="1060" y="498" width="180" height="50" rx="10" />
+                <text class="title" x="1150" y="520" text-anchor="middle">OpenAI</text>
+                <text class="sub" x="1150" y="538" text-anchor="middle">gpt-5.5 · gpt-image-2</text>
               </g>
               <g class="node ext" data-id="inworld" data-wave="all" tabindex="0">
-                <rect x="1000" y="490" width="160" height="50" rx="10" />
-                <text class="title" x="1080" y="512" text-anchor="middle">Inworld TTS</text>
-                <text class="sub" x="1080" y="530" text-anchor="middle">inworld-tts-2 · OGG</text>
+                <rect x="1060" y="640" width="180" height="50" rx="10" />
+                <text class="title" x="1150" y="662" text-anchor="middle">Inworld TTS</text>
+                <text class="sub" x="1150" y="680" text-anchor="middle">inworld-tts-2 · OGG</text>
               </g>
             </g>
           </svg>
@@ -795,6 +945,12 @@
           </span>
           <span class="sw">
             <span class="keybox" style="border-color: var(--w4)"></span>Wave 4 (agents)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w5)"></span>Wave 5 (workflow)
+          </span>
+          <span class="sw">
+            <span class="keybox" style="border-color: var(--w6)"></span>Wave 6 (API + UI)
           </span>
           <span class="sw">
             <span class="keybox" style="border-color: var(--bad)"></span>Stale / broken
@@ -828,41 +984,133 @@
       const NODES = {
         browser: {
           title: 'Browser',
-          sub: '@ai-sdk/react useChat()',
-          body: 'Single-page chat surface. Hits POST/GET /api/chat. Will need to be rewired to /api/turn in Wave 6.',
+          sub: 'fetch /api/turn · reads SSE · folds PhaseEvents through reducer',
+          body: 'Single-page chat surface. /play/[slug] is the live entry; /chat is the stale starter.',
           files: [],
-          links: ['chatPage'],
+          links: ['playPage', 'chatPage'],
           tags: [['info', 'client']],
+        },
+        playPage: {
+          title: 'src/app/play/[slug]/',
+          sub: 'Wave 6 chat UI · ~242 LOC in play-client.tsx',
+          body: 'Server component page.tsx awaits the Next-16 params Promise and renders <PlayClient>. The client owns turn state: per-turn UiState (phases, prose, finalProse, audio, images, error). Streaming bubble shows accumulated prose_delta until the done event replaces it with illustrator.prose_with_embeds. PhaseTape (right rail) shows per-phase status. MutexBanner appears when the SSE stream emits {error, recoverable:true, "still working"}.',
+          files: [
+            'src/app/play/[slug]/page.tsx',
+            'src/app/play/[slug]/play-client.tsx',
+            'src/app/play/[slug]/phase-tape.tsx',
+            'src/app/play/[slug]/mutex-banner.tsx',
+            'src/app/play/[slug]/turn-images.tsx',
+          ],
+          links: ['apiTurn', 'apiTurnAudio', 'apiTurnImage', 'sseModule'],
+          tags: [
+            ['w6', 'wave 6'],
+            ['good', 'live'],
+          ],
         },
         chatPage: {
           title: 'src/app/chat/page.tsx',
           sub: "'use client' · DefaultChatTransport",
-          body: 'Renders a message list and a form. On mount fetches history from /api/chat. Uses ai-elements components only after Wave 6.',
+          body: 'Starter chat page from the Mastra create-app template. Renders <ul> messages and a form, hits /api/chat. Pointed at a stale route — no longer the project entry point. Will be removed once Wave 7 deletes the /api/chat scaffold.',
+          alert: 'Stale: posts to /api/chat which still names the deleted weather-agent.',
           files: ['src/app/chat/page.tsx'],
           links: ['apiChat'],
-          tags: [['info', 'client']],
+          tags: [['bad', 'stale']],
+        },
+        apiTurn: {
+          title: 'src/app/api/turn/route.ts',
+          sub: 'POST · SSE bridge · Wave 6',
+          body: 'handleTurnPost(req, opts) validates {slug, input} with Zod (400 on missing/empty), opens a ReadableStream, installs a 15s heartbeat (": heartbeat\\n\\n"), registers an abort listener (clientGone flag = no more enqueue, runner keeps running per concurrency invariant #3), and fire-and-forgets runTurn(parsed, emit, {runner: opts.runner}). Response headers: text/event-stream, no-cache, x-accel-buffering: no. Runtime: nodejs.',
+          files: ['src/app/api/turn/route.ts', 'src/app/api/turn/route.test.ts'],
+          links: ['sseModule', 'turnWorkflow'],
+          tags: [
+            ['w6', 'wave 6'],
+            ['good', 'zod body'],
+          ],
+        },
+        apiTurnAudio: {
+          title: 'src/app/api/turn/audio/route.ts',
+          sub: 'GET · audio/ogg · ~46 LOC',
+          body: 'Serves <vaultRoot(slug)>/audio/<filename> as audio/ogg. Reject paths that escape the resolved audio/ dir. 1-hour private cache. No range requests in v0 — turn audio is ~30s of narrator prose.',
+          files: ['src/app/api/turn/audio/route.ts', 'src/app/api/turn/audio/route.test.ts'],
+          links: ['vaultFs'],
+          tags: [
+            ['w6', 'wave 6'],
+            ['good', 'guarded'],
+          ],
+        },
+        apiTurnImage: {
+          title: 'src/app/api/turn/image/route.ts',
+          sub: 'GET · image/png · ~44 LOC',
+          body: "Mirror of /api/turn/audio for illustrator PNGs. Vault images live outside public/, so next/image's loader would 404 — the client uses a plain <img> against this route.",
+          files: ['src/app/api/turn/image/route.ts', 'src/app/api/turn/image/route.test.ts'],
+          links: ['vaultFs'],
+          tags: [
+            ['w6', 'wave 6'],
+            ['good', 'guarded'],
+          ],
         },
         apiChat: {
           title: 'src/app/api/chat/route.ts',
           sub: 'POST stream + GET memory recall',
-          body: "Still calls handleChatStream({ agentId: 'weather-agent' }) and mastra.getAgentById('weather-agent'). The weather agent was removed in Wave 4, so both methods will fail at runtime. Dead code until Wave 5 lands /api/turn.",
-          alert: '⚠ Stale: references a deleted agent. Will 500 on any call.',
+          body: "Starter route still calling handleChatStream({ agentId: 'weather-agent' }) and mastra.getAgentById('weather-agent'). The weather agent was removed in Wave 4. Slated for deletion.",
+          alert: 'Stale: references a deleted agent. Will 500 on any call.',
           files: ['src/app/api/chat/route.ts'],
           links: ['mastraIndex'],
           tags: [['bad', 'stale']],
         },
+        sseModule: {
+          title: 'src/lib/sse/',
+          sub: 'Wave 6 · wire protocol + UI reducer',
+          body: 'events.ts re-exports PhaseEvent and adds isPhaseEvent runtime guard. serialize.ts emits "event: <type>\\ndata: <json>\\n\\n" + heartbeat records. parse.ts splits chunks on \\n\\n, holds partial trailing record, drops malformed records (tolerant). reducer.ts is the pure UiState reducer (phases, prose, finalProse, audioPath, images, error). runner.ts dispatches three ways: opts.runner > RPG_RUNNER_MOCK==="1" > liveRunTurn (adaptMastraAgent × 3 → workflow runTurn).',
+          files: [
+            'src/lib/sse/events.ts',
+            'src/lib/sse/serialize.ts',
+            'src/lib/sse/parse.ts',
+            'src/lib/sse/reducer.ts',
+            'src/lib/sse/runner.ts',
+          ],
+          links: ['turnWorkflow', 'playPage', 'apiTurn'],
+          tags: [['w6', 'wave 6']],
+        },
+        turnWorkflow: {
+          title: 'src/mastra/workflows/turn.ts',
+          sub: 'Wave 5 · runTurn + turnWorkflow shell',
+          body: 'runTurn(input, deps) is a single async function with one try/finally so the mutex releases on every code path. 5 steps: (1) lock + mintTurnId + loadAlwaysLoaded + parseRecentEntries + identifyOnStage. (2) faction fan-out (Promise.all + generateWithRetry). (3) narrator stream (streamNarratorWithRetry emits prose_delta). (4) illustrator || ttsRender (Promise.all, two retry helpers). (5) persist: worldTick if time_passed, appendJournal, stubOnMention (max 2; overflow → 0-Map.md TODO), appendPlaytest. Retry tags: NARRATOR_FAILED, TTS_FAILED. turnWorkflow is a createWorkflow shell that delegates to runTurn so Mastra Studio observes the run.',
+          files: [
+            'src/mastra/workflows/turn.ts',
+            'src/mastra/workflows/turn.test.ts',
+            'src/mastra/workflows/turn.harness.ts',
+          ],
+          links: [
+            'narrator',
+            'faction',
+            'illustrator',
+            'dossier',
+            'schemas',
+            'mediaTts',
+            'vaultLib',
+            'mastraIndex',
+          ],
+          tags: [
+            ['w5', 'wave 5'],
+            ['good', 'orchestrator'],
+          ],
+        },
         mastraIndex: {
           title: 'src/mastra/index.ts',
           sub: 'Mastra singleton (~48 LOC)',
-          body: 'Registers narratorAgent, factionAgent, illustratorAgent. workflows key intentionally omitted (Wave 5 will add it). Storage: MastraCompositeStore — default LibSQL, domain.observability DuckDB. Observability: DefaultExporter + CloudExporter + SensitiveDataFilter.',
+          body: 'Registers narratorAgent, factionAgent, illustratorAgent, and turnWorkflow. Storage: MastraCompositeStore — default LibSQL (file:./mastra.db), domain.observability DuckDB. Observability: DefaultExporter + CloudExporter + SensitiveDataFilter.',
           files: ['src/mastra/index.ts', 'src/mastra/index.test.ts'],
-          links: ['narrator', 'faction', 'illustrator', 'libsql', 'duckdb'],
-          tags: [['w4', 'wave 4']],
+          links: ['narrator', 'faction', 'illustrator', 'turnWorkflow', 'libsql', 'duckdb'],
+          tags: [
+            ['w4', 'wave 4'],
+            ['w5', '+wave 5'],
+          ],
         },
         narrator: {
           title: 'agents/narrator.ts',
           sub: 'id "narrator" · openai/gpt-5.5',
-          body: 'Writes per-turn prose given a dossier (world, character, threads, style guide, on-stage, recent journal, faction decisions, player input). Returns NarratorOutput = { prose, time_passed? }. Uses loadEntity to look up wikilinks not in the on-stage block; calls dice mid-prose.',
+          body: 'Writes per-turn prose given a dossier (world, character, threads, style guide, on-stage, recent journal, faction decisions, player input). Returns NarratorOutput = { prose, time_passed? }. Uses loadEntity to look up wikilinks not in the on-stage block; calls dice mid-prose. Wave 5 streams its textStream and emits each chunk as a prose_delta.',
           files: ['src/mastra/agents/narrator.ts'],
           links: ['loadEntity', 'dice', 'schemas', 'openai'],
           tags: [
@@ -874,7 +1122,7 @@
         faction: {
           title: 'agents/faction.ts',
           sub: 'id "faction" · openai/gpt-5.5',
-          body: 'Plays one faction per call. Returns FactionOutput = { decision, reasoning }. The workflow fans out one call per on-stage faction, then collects decisions for the narrator dossier. No tools — pure prompt → JSON.',
+          body: 'Plays one faction per call. Returns FactionOutput = { decision, reasoning }. The workflow fans out one call per on-stage faction in parallel, then collects decisions for the narrator dossier. No tools — pure prompt → JSON.',
           files: ['src/mastra/agents/faction.ts'],
           links: ['schemas', 'openai'],
           tags: [
@@ -885,7 +1133,7 @@
         illustrator: {
           title: 'agents/illustrator.ts',
           sub: 'id "illustrator" · openai/gpt-5.5',
-          body: "Chooses 0–3 scenes from the narrator prose, calls the image tool to generate PNGs, returns IllustratorOutput = { prose_with_embeds, images[] }. Inserts `![[filename.png]]` embeds on their own lines without changing the narrator's words.",
+          body: "Chooses 0–3 scenes from the narrator prose, calls the image tool to generate PNGs, returns IllustratorOutput = { prose_with_embeds, images[] }. Inserts ![[filename.png]] embeds on their own lines without changing the narrator's words.",
           files: ['src/mastra/agents/illustrator.ts'],
           links: ['imageTool', 'schemas', 'openai'],
           tags: [['w4', 'wave 4']],
@@ -944,12 +1192,12 @@
         mediaTts: {
           title: 'lib/media/tts.ts',
           sub: 'Inworld inworld-tts-2',
-          body: 'ttsRender(text, options) renders OGG Opus directly (no MP3 intermediate, no ffmpeg). deps.inworld is the structural seam. Module is built and tested but no agent or tool calls it yet — reserved for future narration playback.',
+          body: 'ttsRender(text, options) renders OGG Opus directly (no MP3 intermediate, no ffmpeg). deps.inworld is the structural seam. Wired into the turn workflow via ttsWithRetry — writes <vault>/audio/narrator-<turnId>.ogg.',
           files: ['src/lib/media/tts.ts'],
           links: ['inworld'],
           tags: [
             ['w3', 'wave 3'],
-            ['warn', 'unwired'],
+            ['w5', '+wave 5'],
           ],
         },
         vaultLib: {
@@ -994,7 +1242,7 @@
         vaultFs: {
           title: 'vaults/<slug>/',
           sub: 'Markdown + XML + state',
-          body: 'world.xml, threads.xml, character.xml, 0-Map.md, style-guide.md, journal.md, factions/, npcs/, locations/, images/, playtests/<YYYY-MM-DD>.md, .turn-counter. Live vault: vaults/commodore-vex/. Fixture: tests/fixtures/test-vault/.',
+          body: 'world.xml, threads.xml, character.xml, 0-Map.md, style-guide.md, journal.md, factions/, npcs/, locations/, images/, audio/, playtests/<YYYY-MM-DD>.md, .turn-counter. Live vault: vaults/commodore-vex/. Fixture: tests/fixtures/test-vault/.',
           files: ['vaults/commodore-vex/', 'tests/fixtures/test-vault/'],
           links: [],
           tags: [['info', 'filesystem']],
@@ -1010,7 +1258,7 @@
         inworld: {
           title: 'Inworld TTS',
           sub: 'model inworld-tts-2',
-          body: 'Speech synthesis (OGG Opus). Auth via INWORLD_API_KEY. SDK: @inworld/tts ^1.1.1.',
+          body: 'Speech synthesis (OGG Opus). Auth via INWORLD_API_KEY. SDK: @inworld/tts ^1.1.1. Called by the turn workflow on the media step (Step 4).',
           files: [],
           links: [],
           tags: [['info', 'external']],
@@ -1057,22 +1305,28 @@
 
       function highlightEdges(id) {
         const map = {
-          chatPage: ['ui'],
+          browser: ['ui', 'stale-ui'],
+          playPage: ['ui', 'ui-audio', 'ui-image'],
+          chatPage: ['stale-ui', 'stale'],
+          apiTurn: ['ui', 'sse', 'sse-runner'],
+          apiTurnAudio: ['ui-audio', 'asset'],
+          apiTurnImage: ['ui-image', 'asset'],
           apiChat: ['stale'],
-          browser: ['ui'],
+          sseModule: ['sse', 'sse-runner'],
+          turnWorkflow: ['sse-runner', 'reg', 'wf-agent', 'wf-lib', 'wf-vault'],
           mastraIndex: ['reg', 'storage'],
-          narrator: ['reg', 'tools', 'schemas', 'openai'],
-          faction: ['reg', 'schemas', 'openai'],
-          illustrator: ['reg', 'tools', 'schemas', 'openai'],
+          narrator: ['wf-agent', 'tools', 'schemas', 'openai'],
+          faction: ['wf-agent', 'schemas', 'openai'],
+          illustrator: ['wf-agent', 'tools', 'schemas', 'openai'],
           dice: ['tools'],
           loadEntity: ['tools', 'vault'],
           imageTool: ['tools', 'image', 'vault'],
-          dossier: ['dossier'],
-          schemas: ['schemas'],
+          dossier: ['dossier', 'wf-lib'],
+          schemas: ['schemas', 'wf-lib'],
           mediaImage: ['image'],
-          mediaTts: ['image'],
-          vaultLib: ['vault', 'dossier', 'vaultfs'],
-          vaultFs: ['vaultfs'],
+          mediaTts: ['image', 'wf-lib'],
+          vaultLib: ['vault', 'dossier', 'wf-vault', 'vaultfs'],
+          vaultFs: ['vaultfs', 'asset'],
           libsql: ['storage'],
           duckdb: ['storage'],
           openai: ['openai', 'image'],
@@ -1140,8 +1394,8 @@
         }
       });
 
-      // Auto-select the stale route on load to draw attention to the live issue.
-      select('apiChat');
+      // Auto-select the workflow on load — it's the spine of the new pipeline.
+      select('turnWorkflow');
     </script>
   </body>
 </html>
