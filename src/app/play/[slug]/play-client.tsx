@@ -21,7 +21,6 @@ import {
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message';
 import {
   PromptInput,
-  PromptInputBody,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
@@ -164,20 +163,18 @@ export function PlayClient({ slug }: { slug: string }) {
             await submit(text);
           }}
         >
-          <PromptInputBody>
-            <PromptInputTextarea
-              ref={inputRef}
-              placeholder="What do you do?"
+          <PromptInputTextarea
+            ref={inputRef}
+            placeholder="What do you do?"
+            disabled={busy || mutexMessage !== null}
+          />
+          <PromptInputFooter>
+            <span />
+            <PromptInputSubmit
               disabled={busy || mutexMessage !== null}
+              status={busy ? 'streaming' : 'ready'}
             />
-            <PromptInputFooter>
-              <span />
-              <PromptInputSubmit
-                disabled={busy || mutexMessage !== null}
-                status={busy ? 'streaming' : 'ready'}
-              />
-            </PromptInputFooter>
-          </PromptInputBody>
+          </PromptInputFooter>
         </PromptInput>
       </div>
       <aside className="w-full shrink-0 lg:w-80">
