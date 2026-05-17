@@ -9,7 +9,7 @@ import type { ImageMeta } from '@/lib/schemas';
 export type PhaseStatus = 'pending' | 'active' | 'done';
 
 export interface PhaseRecord {
-  name: 'factions' | 'narrator' | 'media' | 'persist';
+  name: 'factions' | 'narrator' | 'media' | 'persist' | 'ask';
   status: PhaseStatus;
   count?: number;
 }
@@ -22,6 +22,7 @@ export interface UiState {
   images: ImageMeta[];
   error: { message: string; recoverable: boolean } | null;
   status: 'idle' | 'streaming' | 'done' | 'error';
+  mode: 'canonical' | 'ooc';
 }
 
 export function initialState(): UiState {
@@ -33,6 +34,7 @@ export function initialState(): UiState {
     images: [],
     error: null,
     status: 'idle',
+    mode: 'canonical',
   };
 }
 
@@ -64,6 +66,11 @@ export function reducePhaseEvent(state: UiState, ev: PhaseEvent): UiState {
         finalProse: ev.finalProse,
         audioPath: ev.audioPath,
         images: ev.images,
+        // Default to canonical when the producer omits `mode`. The previous
+        // `?? state.mode` fallback could in theory carry an 'ooc' mode across
+        // a done event that arrived without one — `?? 'canonical'` is what the
+        // wire contract actually says.
+        mode: ev.mode ?? 'canonical',
       };
     case 'error':
       return {

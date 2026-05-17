@@ -8,9 +8,11 @@
 export { type PhaseEvent } from '@/mastra/workflows/turn';
 import type { PhaseEvent } from '@/mastra/workflows/turn';
 
-export type PhaseName = 'factions' | 'narrator' | 'media' | 'persist';
+export type PhaseName = 'factions' | 'narrator' | 'media' | 'persist' | 'ask';
 
-const PHASE_NAMES = new Set<PhaseName>(['factions', 'narrator', 'media', 'persist']);
+const PHASE_NAMES = new Set<PhaseName>(['factions', 'narrator', 'media', 'persist', 'ask']);
+
+const DONE_MODES = new Set<'canonical' | 'ooc'>(['canonical', 'ooc']);
 
 /** Cheap runtime guard for parsed JSON. Used by the SSE parser to drop garbage. */
 export function isPhaseEvent(x: unknown): x is PhaseEvent {
@@ -26,11 +28,11 @@ export function isPhaseEvent(x: unknown): x is PhaseEvent {
     case 'prose_delta':
       return typeof o.text === 'string';
     case 'done':
-      return (
-        typeof o.audioPath === 'string' &&
-        typeof o.finalProse === 'string' &&
-        Array.isArray(o.images)
-      );
+      if (typeof o.finalProse !== 'string') return false;
+      if (!Array.isArray(o.images)) return false;
+      if (o.audioPath !== null && typeof o.audioPath !== 'string') return false;
+      if (o.mode !== undefined && !DONE_MODES.has(o.mode as 'canonical' | 'ooc')) return false;
+      return true;
     case 'error':
       return typeof o.message === 'string' && typeof o.recoverable === 'boolean';
     default:

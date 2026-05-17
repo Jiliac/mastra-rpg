@@ -41,3 +41,9 @@ export const IllustratorOutput = z.object({
   images: z.array(ImageMeta),
 });
 export type IllustratorOutput = z.infer<typeof IllustratorOutput>;
+
+export const ClassifierOutput = z.object({
+  isOoc: z.boolean(),
+  reasoning: z.string().min(1),
+});
+export type ClassifierOutput = z.infer<typeof ClassifierOutput>;

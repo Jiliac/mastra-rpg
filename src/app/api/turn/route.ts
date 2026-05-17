@@ -12,15 +12,48 @@
 import { z } from 'zod';
 import type { PhaseEvent } from '@/lib/sse/events';
 import { serializeEvent, serializeHeartbeat } from '@/lib/sse/serialize';
-import { runTurn, type RunTurnInput, type Emit } from '@/lib/sse/runner';
+import { runTurn, runAsk, type RunTurnInput, type RunAskInput, type Emit } from '@/lib/sse/runner';
+import { classifierAgent } from '@/mastra/agents/classifier';
+import type { ClassifierOutput } from '@/lib/schemas';
 
 export const dynamic = 'force-dynamic';
 // Node runtime — we depend on `node:fs` etc. via the runner's transitive imports.
 export const runtime = 'nodejs';
 
 export interface PostOpts {
-  /** Test DI: override the runner. */
+  /** Test DI: override the canonical runner. */
   runner?: (input: RunTurnInput, emit: Emit) => Promise<void>;
+  /** Test DI: override the OOC runner. */
+  askRunner?: (input: RunAskInput, emit: Emit) => Promise<void>;
+  /**
+   * Test DI: override the classifier. Return `{ isOoc: boolean }` or throw to
+   * exercise the fail-safe fallback. Defaults to `classifierAgent.generate(...)`.
+   */
+  classify?: (input: string) => Promise<ClassifierOutput>;
+  /** Test DI: override the classifier timeout in ms. Defaults to 5000. */
+  classifyTimeoutMs?: number;
+}
+
+/** Default classifier timeout. gpt-5.4-mini with low reasoning should respond
+ *  in well under 2s; 5s gives slack without making clients wait on a stalled
+ *  provider before the SSE stream even opens. */
+const CLASSIFY_TIMEOUT_MS = 5_000;
+
+class ClassifierTimeoutError extends Error {
+  constructor(public timeoutMs: number) {
+    super(`classifier timed out after ${timeoutMs}ms`);
+    this.name = 'ClassifierTimeoutError';
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ClassifierTimeoutError(ms)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
 }
 
 // Project rule (.coderabbit.yaml lines 176-179): route handlers must validate
@@ -66,10 +99,38 @@ const SSE_HEADERS: HeadersInit = {
  * a mock runner; production code goes through the `POST` wrapper which
  * conforms to Next 16's `RouteHandlerConfig` constraint.
  */
+async function defaultClassify(input: string): Promise<ClassifierOutput> {
+  // `Agent.generate(messages, options)` returns FullOutput<T> where `.object`
+  // is the parsed structured output (NarratorOutput/etc.). Cast through
+  // unknown — Mastra's type surface for the short-form overload doesn't
+  // structurally match ClassifierOutput here.
+  const res = (await classifierAgent.generate(input)) as unknown as { object: ClassifierOutput };
+  return res.object;
+}
+
 export async function handleTurnPost(req: Request, opts: PostOpts = {}): Promise<Response> {
   const parsed = await parseBody(req);
   if ('error' in parsed) {
     return new Response(parsed.error, { status: 400 });
+  }
+
+  // Fail-safe classifier: any throw, malformed shape, or timeout falls back to
+  // canonical. Better to over-run the full pipeline than miss a real turn.
+  // A bounded timeout matters because we are blocking SSE stream creation on
+  // this call — without it, a stalled provider hangs the client with no
+  // heartbeats until its socket times out.
+  const classify = opts.classify ?? defaultClassify;
+  const timeoutMs = opts.classifyTimeoutMs ?? CLASSIFY_TIMEOUT_MS;
+  let isOoc = false;
+  try {
+    const verdict = await withTimeout(classify(parsed.input), timeoutMs);
+    isOoc = verdict.isOoc === true;
+  } catch (err) {
+    console.warn(
+      `[turn route] classifier failed, defaulting to canonical:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    isOoc = false;
   }
 
   const encoder = new TextEncoder();
@@ -124,7 +185,10 @@ export async function handleTurnPost(req: Request, opts: PostOpts = {}): Promise
 
       // Fire-and-forget. If the runner throws an unexpected error,
       // surface it as a final SSE error event.
-      const runPromise = runTurn(parsed, emit, { runner: opts.runner }).then(
+      const dispatch = isOoc
+        ? runAsk(parsed, emit, { runner: opts.askRunner })
+        : runTurn(parsed, emit, { runner: opts.runner });
+      const runPromise = dispatch.then(
         () => {
           clearInterval(heartbeat);
           safeClose();

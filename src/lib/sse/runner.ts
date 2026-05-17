@@ -26,9 +26,11 @@ import {
 import { narratorAgent } from '@/mastra/agents/narrator';
 import { factionAgent } from '@/mastra/agents/faction';
 import { illustratorAgent } from '@/mastra/agents/illustrator';
+import { loremasterAgent } from '@/mastra/agents/loremaster';
 import { vaultRoot } from '@/lib/vault/paths';
 import { ttsRender } from '@/lib/media/tts';
 import type { NarratorOutput, FactionOutput, IllustratorOutput } from '@/lib/schemas';
+import { runAsk as askRunAsk, mockRunAsk, type RunAskInput, type MockAskOpts } from './ask';
 
 export interface RunTurnInput {
   slug: string;
@@ -230,3 +232,39 @@ export async function runTurn(
   if (process.env.RPG_RUNNER_MOCK === '1') return mockRunTurn(input, emit);
   return liveRunTurn(input, emit);
 }
+
+// ----- ask (OOC) live runner ----------------------------------------------
+
+export async function liveRunAsk(input: RunAskInput, emit: Emit): Promise<void> {
+  // Loremaster has no structured output schema, so its `.object` is unused —
+  // `runAsk` only iterates `textStream`. The cast is safe because the adapter
+  // narrows the Mastra `Agent` shape down to what `runAsk` actually reads;
+  // do not remove the inline alias thinking it's cargo-cult — it exists to
+  // tell TypeScript the resolved object type is `unknown`, not the agent's
+  // richer FullOutput<unknown> / MastraModelOutput<unknown> wire shape.
+  type MastraStreamShape = {
+    generate: (prompt: string) => Promise<{ object: unknown }>;
+    stream: (prompt: string) => Promise<{
+      textStream: ReadableStream<string> | AsyncIterable<string>;
+      object: Promise<unknown>;
+    }>;
+  };
+  const adapted = adaptMastraAgent(loremasterAgent as unknown as MastraStreamShape);
+  await askRunAsk(input, { loremasterAgent: adapted, emit });
+}
+
+// ----- ask (OOC) top-level dispatcher -------------------------------------
+
+export interface RunAskOpts {
+  /** Test/route DI: override the runner. */
+  runner?: (input: RunAskInput, emit: Emit) => Promise<void>;
+}
+
+export async function runAsk(input: RunAskInput, emit: Emit, opts: RunAskOpts = {}): Promise<void> {
+  if (opts.runner) return opts.runner(input, emit);
+  if (process.env.RPG_RUNNER_MOCK === '1') return mockRunAsk(input, emit);
+  return liveRunAsk(input, emit);
+}
+
+export type { RunAskInput, MockAskOpts };
+export { mockRunAsk };

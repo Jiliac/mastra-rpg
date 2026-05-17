@@ -12,10 +12,12 @@ import {
 import { narratorAgent } from './agents/narrator';
 import { factionAgent } from './agents/faction';
 import { illustratorAgent } from './agents/illustrator';
+import { classifierAgent } from './agents/classifier';
+import { loremasterAgent } from './agents/loremaster';
 import { turnWorkflow } from './workflows/turn';
 
 export const mastra = new Mastra({
-  agents: { narratorAgent, factionAgent, illustratorAgent },
+  agents: { narratorAgent, factionAgent, illustratorAgent, classifierAgent, loremasterAgent },
   workflows: { turnWorkflow },
   storage: new MastraCompositeStore({
     id: 'composite-storage',

@@ -73,10 +73,17 @@ import { ttsRender } from '@/lib/media/tts';
 export type PhaseEvent =
   | { type: 'phase'; name: 'factions'; count: number }
   | { type: 'phase'; name: 'narrator' }
+  | { type: 'phase'; name: 'ask' }
   | { type: 'prose_delta'; text: string }
   | { type: 'phase'; name: 'media' }
   | { type: 'phase'; name: 'persist' }
-  | { type: 'done'; audioPath: string; finalProse: string; images: ImageMeta[] }
+  | {
+      type: 'done';
+      audioPath: string | null;
+      finalProse: string;
+      images: ImageMeta[];
+      mode?: 'canonical' | 'ooc';
+    }
   | { type: 'error'; message: string; recoverable: boolean };
 
 export type PhaseEventEmitter = (event: PhaseEvent) => void;

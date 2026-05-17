@@ -47,6 +47,15 @@ export interface BuildIllustratorDossierInput {
   onStage: OnStage;
 }
 
+export interface BuildLoremasterDossierInput {
+  world: WorldView;
+  character: CharacterView;
+  threads: ThreadView[];
+  factions: EntityDoc[];
+  recent: JournalEntry[];
+  playerInput: string;
+}
+
 // ---- extractVisualBlock --------------------------------------------------
 
 /**
@@ -158,7 +167,7 @@ export function buildFactionDossier(input: BuildFactionDossierInput): string {
     `<recent_journal>`,
     renderJournal(input.recent),
     `</recent_journal>`,
-    `<player_input>${input.playerInput.trim()}</player_input>`,
+    `<player_input>${esc(input.playerInput.trim())}</player_input>`,
   ].join('\n');
 }
 
@@ -186,8 +195,35 @@ export function buildNarratorDossier(input: BuildNarratorDossierInput): string {
     renderJournal(input.recent),
     `</recent_journal>`,
     `<faction_decisions>${renderDecisions(input.factionDecisions)}</faction_decisions>`,
-    `<player_input>${input.playerInput.trim()}</player_input>`,
+    `<player_input>${esc(input.playerInput.trim())}</player_input>`,
     `</turn>`,
+  ].join('\n');
+}
+
+/**
+ * Build the loremaster prompt. Used by the OOC fork (runAsk). No on-stage
+ * detection, no faction fan-out — the loremaster gets the full always-loaded
+ * world + character + threads + faction bodies + recent journal, then answers
+ * the player's meta question in plain prose.
+ */
+export function buildLoremasterDossier(input: BuildLoremasterDossierInput): string {
+  return [
+    `<world calendar="${esc(input.world.calendar)}" date="${esc(input.world.date)}">`,
+    renderWorld(input.world),
+    `</world>`,
+    `<character>`,
+    renderCharacter(input.character),
+    `</character>`,
+    `<threads>`,
+    renderThreads(input.threads),
+    `</threads>`,
+    `<factions>`,
+    renderFactions(input.factions),
+    `</factions>`,
+    `<recent_journal>`,
+    renderJournal(input.recent),
+    `</recent_journal>`,
+    `<ooc_question>${esc(input.playerInput.trim())}</ooc_question>`,
   ].join('\n');
 }
 
@@ -247,6 +283,14 @@ function renderThreads(threads: ThreadView[]): string {
       (t) =>
         `  <thread id="${esc(t.id)}"><name>${esc(t.name)}</name><progress>${esc(t.progress)}</progress><stake>${esc(t.stake)}</stake></thread>`,
     )
+    .join('\n');
+}
+
+function renderFactions(factions: EntityDoc[]): string {
+  // Same reasoning as renderOnStage: bodies stay raw markdown for LLM
+  // consumption; only the slug attribute is escaped.
+  return factions
+    .map((f) => `  <faction slug="${esc(f.slug)}">${f.body.trim()}</faction>`)
     .join('\n');
 }
 
