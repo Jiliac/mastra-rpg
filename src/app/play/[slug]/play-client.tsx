@@ -197,6 +197,14 @@ function TurnView({ slug, turn }: { slug: string; turn: TurnRecord }) {
       {(state.status !== 'idle' || proseToRender.length > 0) && (
         <Message from="assistant">
           <MessageContent>
+            {state.mode === 'ooc' && (
+              <span
+                className="mb-1 inline-block rounded border border-muted-foreground/30 bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                aria-label="out-of-character"
+              >
+                OOC
+              </span>
+            )}
             <MessageResponse>{proseToRender}</MessageResponse>
           </MessageContent>
         </Message>

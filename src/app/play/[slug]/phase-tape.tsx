@@ -11,6 +11,7 @@ const LABELS: Record<PhaseRecord['name'], string> = {
   narrator: 'Narrator',
   media: 'Audio + images',
   persist: 'Persisting turn',
+  ask: 'Loremaster',
 };
 
 function PhaseRow({ phase }: { phase: PhaseRecord }) {

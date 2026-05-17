@@ -91,18 +91,18 @@ Expected: all paths listed.
 
 Production files:
 
-| File                              | Responsibility                                                                                                                                                                                                                                                                                                                                       | LOC budget |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------: |
-| `src/mastra/workflows/turn.ts`    | Exports (a) `runTurn(input, deps)` — the orchestrator; (b) `turnWorkflow` — a Mastra `createWorkflow` shell wrapping `runTurn` so it appears in Studio; (c) the `PhaseEvent` discriminated union type re-exported from the spec; (d) `PhaseEventEmitter` callback type. Five logical steps inside `runTurn`, with mutex release in `finally`.       |       ~320 |
-| `src/mastra/index.ts` (modify)    | Add the workflow to `new Mastra({ ..., workflows: { turnWorkflow } })`. ~3 LOC of net change.                                                                                                                                                                                                                                                          |       (~3) |
-| `scripts/smoke-turn.ts`           | CLI: `pnpm tsx scripts/smoke-turn.ts --vault <path> --input "..."`. Reads flags, calls `runTurn` with real agents from `mastra.getAgent(...)`, real TTS + image deps, prints a summary. NOT registered with Mastra; NOT shipped to prod.                                                                                                              |        ~30 |
+| File                           | Responsibility                                                                                                                                                                                                                                                                                                                                | LOC budget |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------: |
+| `src/mastra/workflows/turn.ts` | Exports (a) `runTurn(input, deps)` — the orchestrator; (b) `turnWorkflow` — a Mastra `createWorkflow` shell wrapping `runTurn` so it appears in Studio; (c) the `PhaseEvent` discriminated union type re-exported from the spec; (d) `PhaseEventEmitter` callback type. Five logical steps inside `runTurn`, with mutex release in `finally`. |       ~320 |
+| `src/mastra/index.ts` (modify) | Add the workflow to `new Mastra({ ..., workflows: { turnWorkflow } })`. ~3 LOC of net change.                                                                                                                                                                                                                                                 |       (~3) |
+| `scripts/smoke-turn.ts`        | CLI: `pnpm tsx scripts/smoke-turn.ts --vault <path> --input "..."`. Reads flags, calls `runTurn` with real agents from `mastra.getAgent(...)`, real TTS + image deps, prints a summary. NOT registered with Mastra; NOT shipped to prod.                                                                                                      |        ~30 |
 
 Test files (all new):
 
-| File                                       | Coverage                                                                                                                                                                                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/mastra/workflows/turn.test.ts`        | 8 Layer-2 integration scenarios (happy path, faction retry × 2, narrator retry × 2, concurrent turns, image gen failure, TTS failure × 2, mid-step crash, stub cap). Uses a copy of `tests/fixtures/test-vault` per test (filesystem mutating). |
-| `src/mastra/workflows/turn.harness.ts`     | (~80 LOC test-helper, NOT counted in LOC budget) — fixture-vault copier, mock agent factories (`makeMockFactionAgent({ outputs })`, etc.), `PhaseEvent` collector. Lives alongside the test for discoverability.                              |
+| File                                   | Coverage                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/mastra/workflows/turn.test.ts`    | 8 Layer-2 integration scenarios (happy path, faction retry × 2, narrator retry × 2, concurrent turns, image gen failure, TTS failure × 2, mid-step crash, stub cap). Uses a copy of `tests/fixtures/test-vault` per test (filesystem mutating). |
+| `src/mastra/workflows/turn.harness.ts` | (~80 LOC test-helper, NOT counted in LOC budget) — fixture-vault copier, mock agent factories (`makeMockFactionAgent({ outputs })`, etc.), `PhaseEvent` collector. Lives alongside the test for discoverability.                                |
 
 Out of LOC budget but mandatory:
 
@@ -389,27 +389,37 @@ const turnStep = createStep({
     imageCount: z.number().int().nonnegative(),
   }),
   execute: async ({ inputData, mastra, writer }) => {
-    const narratorAgent = mastra!.getAgent('narratorAgent')
-    const factionAgent = mastra!.getAgent('factionAgent')
-    const illustratorAgent = mastra!.getAgent('illustratorAgent')
+    const narratorAgent = mastra!.getAgent('narratorAgent');
+    const factionAgent = mastra!.getAgent('factionAgent');
+    const illustratorAgent = mastra!.getAgent('illustratorAgent');
     const result = await runTurn(inputData, {
-      narratorAgent, factionAgent, illustratorAgent,
+      narratorAgent,
+      factionAgent,
+      illustratorAgent,
       ttsRender,
-      emit: (e) => { writer?.write(e).catch(() => {}) },  // swallow lock errors per spec
-    })
+      emit: (e) => {
+        writer?.write(e).catch(() => {});
+      }, // swallow lock errors per spec
+    });
     if (result.status === 'error') {
-      throw new Error(`turn failed: ${result.message}`)
+      throw new Error(`turn failed: ${result.message}`);
     }
-    return { turnId: result.turnId, finalProse: result.finalProse,
-      audioPath: result.audioPath, imageCount: result.images.length }
+    return {
+      turnId: result.turnId,
+      finalProse: result.finalProse,
+      audioPath: result.audioPath,
+      imageCount: result.images.length,
+    };
   },
-})
+});
 
 export const turnWorkflow = createWorkflow({
   id: 'turnWorkflow',
   inputSchema: turnStep.inputSchema,
   outputSchema: turnStep.outputSchema,
-}).then(turnStep).commit()
+})
+  .then(turnStep)
+  .commit();
 ```
 
 Why a one-step shell rather than five `createStep`s? Three reasons:
@@ -444,8 +454,11 @@ import * as path from 'node:path';
 import { z } from 'zod';
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import type { ImageMeta, NarratorOutput, FactionOutput, IllustratorOutput } from '@/lib/schemas';
-import { FactionOutput as FactionOutputSchema, NarratorOutput as NarratorOutputSchema,
-  IllustratorOutput as IllustratorOutputSchema } from '@/lib/schemas';
+import {
+  FactionOutput as FactionOutputSchema,
+  NarratorOutput as NarratorOutputSchema,
+  IllustratorOutput as IllustratorOutputSchema,
+} from '@/lib/schemas';
 import type { MaturedThread } from '@/lib/vault/threads';
 
 // ---- Public types (Wave-5 ↔ Wave-6 contract) ----
@@ -491,10 +504,7 @@ export interface RunTurnDeps {
   narratorAgent: AgentLike<NarratorOutput>;
   factionAgent: AgentLike<FactionOutput>;
   illustratorAgent: AgentLike<IllustratorOutput>;
-  ttsRender: (
-    text: string,
-    opts: { output: string; voice?: string },
-  ) => Promise<string>;
+  ttsRender: (text: string, opts: { output: string; voice?: string }) => Promise<string>;
   emit: PhaseEventEmitter;
   now?: () => Date;
 }
@@ -529,7 +539,9 @@ export const turnWorkflow = createWorkflow({
   id: 'turnWorkflow',
   inputSchema,
   outputSchema,
-}).then(turnStep).commit();
+})
+  .then(turnStep)
+  .commit();
 ```
 
 - [ ] **Step 2: Write `src/mastra/workflows/turn.harness.ts` skeleton.**
@@ -637,18 +649,19 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { runTurn, type PhaseEvent } from './turn';
 import { acquireMutex, releaseMutex, isLocked } from '@/lib/vault/lock';
-import {
-  copyFixtureVault,
-  makeMockAgent,
-  collectEvents,
-} from './turn.harness';
+import { copyFixtureVault, makeMockAgent, collectEvents } from './turn.harness';
 
 const FIXTURE = path.resolve(__dirname, '../../../tests/fixtures/test-vault');
 
 describe('Step 1: lock + dossier prep', () => {
   let vault: string;
-  beforeEach(async () => { vault = await copyFixtureVault(FIXTURE); });
-  afterEach(async () => { releaseMutex(path.basename(vault)); await fs.rm(vault, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    vault = await copyFixtureVault(FIXTURE);
+  });
+  afterEach(async () => {
+    releaseMutex(path.basename(vault));
+    await fs.rm(vault, { recursive: true, force: true });
+  });
 
   it('returns error and emits error event when mutex contended (Scenario 4)', async () => {
     // Pre-acquire to simulate a previous request still running.
@@ -660,7 +673,9 @@ describe('Step 1: lock + dossier prep', () => {
         narratorAgent: makeMockAgent({ outputs: [] }),
         factionAgent: makeMockAgent({ outputs: [] }),
         illustratorAgent: makeMockAgent({ outputs: [] }),
-        ttsRender: async () => { throw new Error('should not call'); },
+        ttsRender: async () => {
+          throw new Error('should not call');
+        },
         emit,
       },
     );
@@ -890,15 +905,18 @@ Append to `src/mastra/workflows/turn.test.ts`:
 ```ts
 describe('Step 2: faction fan-out', () => {
   let vault: string;
-  beforeEach(async () => { vault = await copyFixtureVault(FIXTURE); });
-  afterEach(async () => { releaseMutex(path.basename(vault)); await fs.rm(vault, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    vault = await copyFixtureVault(FIXTURE);
+  });
+  afterEach(async () => {
+    releaseMutex(path.basename(vault));
+    await fs.rm(vault, { recursive: true, force: true });
+  });
 
   it('emits phase{factions, count:N} then narrator after parallel decisions', async () => {
     const { events, emit } = collectEvents();
     const factionAgent = makeMockAgent({
-      outputs: [
-        { decision: 'red-banner moves', reasoning: 'r1' },
-      ],
+      outputs: [{ decision: 'red-banner moves', reasoning: 'r1' }],
     });
     // Player input mentions Kessha so red-banner spawns.
     const result = await runTurn(
@@ -907,11 +925,13 @@ describe('Step 2: faction fan-out', () => {
         narratorAgent: makeMockAgent({ outputs: [{ throws: new Error('step-3 not yet wired') }] }),
         factionAgent,
         illustratorAgent: makeMockAgent({ outputs: [] }),
-        ttsRender: async () => { throw new Error('should not call'); },
+        ttsRender: async () => {
+          throw new Error('should not call');
+        },
         emit,
       },
     );
-    expect(result.status).toBe('error');  // because step-3 still throws
+    expect(result.status).toBe('error'); // because step-3 still throws
     const phases = events.filter((e) => e.type === 'phase');
     expect(phases[0]).toEqual({ type: 'phase', name: 'factions', count: 1 });
     expect(phases[1]).toEqual({ type: 'phase', name: 'narrator' });
@@ -938,13 +958,19 @@ describe('Step 2: faction fan-out', () => {
       {
         narratorAgent,
         factionAgent,
-        illustratorAgent: makeMockAgent({ outputs: [{ throws: new Error('step-4 not yet wired') }] }),
-        ttsRender: async () => { throw new Error('should not call'); },
+        illustratorAgent: makeMockAgent({
+          outputs: [{ throws: new Error('step-4 not yet wired') }],
+        }),
+        ttsRender: async () => {
+          throw new Error('should not call');
+        },
         emit,
       },
     );
-    void result;  // assert via narrator's prompt below
-    expect(narratorAgent.generateCalls.length + narratorAgent.streamCalls.length).toBeGreaterThan(0);
+    void result; // assert via narrator's prompt below
+    expect(narratorAgent.generateCalls.length + narratorAgent.streamCalls.length).toBeGreaterThan(
+      0,
+    );
     const narratorPrompt = (narratorAgent.streamCalls[0] ?? narratorAgent.generateCalls[0])!;
     expect(narratorPrompt).toContain('<decision faction="red-banner">[no response]</decision>');
     // Implicit: faction was tried twice, then synthesised.
@@ -970,8 +996,10 @@ const decisions = await Promise.all(
       // Faction NPC frontmatter references a faction file that doesn't exist.
       // Spec is silent on this edge case; treat as `[no response]` and move on
       // (matches the spirit of the error matrix: "missing slug → fallback").
-      return { slug: factionSlug, decision:
-        { decision: '[no response]', reasoning: '[faction file missing]' } };
+      return {
+        slug: factionSlug,
+        decision: { decision: '[no response]', reasoning: '[faction file missing]' },
+      };
     }
     const dossier = buildFactionDossier({
       faction: factionDoc,
@@ -981,13 +1009,10 @@ const decisions = await Promise.all(
       character: loaded.character,
       playerInput: input.playerInput,
     });
-    const decision = await generateWithRetry(
-      deps.factionAgent, dossier, FactionOutputSchema,
-      {
-        fallback: { decision: '[no response]', reasoning: '[validation failed twice]' },
-        label: `faction(${factionSlug})`,
-      },
-    );
+    const decision = await generateWithRetry(deps.factionAgent, dossier, FactionOutputSchema, {
+      fallback: { decision: '[no response]', reasoning: '[validation failed twice]' },
+      label: `faction(${factionSlug})`,
+    });
     return { slug: factionSlug, decision };
   }),
 );
@@ -1027,18 +1052,21 @@ Append to `src/mastra/workflows/turn.test.ts`:
 ```ts
 describe('Step 3: narrator', () => {
   let vault: string;
-  beforeEach(async () => { vault = await copyFixtureVault(FIXTURE); });
-  afterEach(async () => { releaseMutex(path.basename(vault)); await fs.rm(vault, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    vault = await copyFixtureVault(FIXTURE);
+  });
+  afterEach(async () => {
+    releaseMutex(path.basename(vault));
+    await fs.rm(vault, { recursive: true, force: true });
+  });
 
   it('emits prose_delta events from the streaming agent', async () => {
     const { events, emit } = collectEvents();
     // Build a stream agent that yields three deltas then resolves to a valid object.
     const narratorAgent: AgentLike<NarratorOutput> = {
       generate: vi.fn(),
-      stream: async () => makeAgentStream(
-        ['Hello, ', 'world. ', 'A test.'],
-        { prose: 'Hello, world. A test.' },
-      ),
+      stream: async () =>
+        makeAgentStream(['Hello, ', 'world. ', 'A test.'], { prose: 'Hello, world. A test.' }),
     };
     await runTurn(
       { vaultRoot: vault, playerInput: 'I do nothing.' },
@@ -1046,7 +1074,9 @@ describe('Step 3: narrator', () => {
         narratorAgent,
         factionAgent: makeMockAgent({ outputs: [] }),
         illustratorAgent: makeMockAgent({ outputs: [{ throws: new Error('step-4 wip') }] }),
-        ttsRender: async () => { throw new Error('not yet wired'); },
+        ttsRender: async () => {
+          throw new Error('not yet wired');
+        },
         emit,
       },
     );
@@ -1060,11 +1090,15 @@ describe('Step 3: narrator', () => {
   it('Scenario 3: narrator failed twice → error{recoverable:true}, no journal append', async () => {
     const journalBefore = await fs.readFile(path.join(vault, 'journal.md'), 'utf8');
     const narratorAgent = {
-      generate: vi.fn(async () => { throw new Error('prose: Required'); }),
+      generate: vi.fn(async () => {
+        throw new Error('prose: Required');
+      }),
       stream: vi.fn(async () => {
         // First attempt: stream resolves but .object rejects.
         return {
-          textStream: (async function* () { yield ''; })(),
+          textStream: (async function* () {
+            yield '';
+          })(),
           object: Promise.reject(new Error('prose: Required')),
         };
       }),
@@ -1076,7 +1110,9 @@ describe('Step 3: narrator', () => {
         narratorAgent: narratorAgent as any,
         factionAgent: makeMockAgent({ outputs: [] }),
         illustratorAgent: makeMockAgent({ outputs: [] }),
-        ttsRender: async () => { throw new Error('should not call'); },
+        ttsRender: async () => {
+          throw new Error('should not call');
+        },
         emit,
       },
     );
@@ -1087,9 +1123,11 @@ describe('Step 3: narrator', () => {
     }
     const journalAfter = await fs.readFile(path.join(vault, 'journal.md'), 'utf8');
     expect(journalAfter).toEqual(journalBefore);
-    expect(isLocked(path.basename(vault))).toBe(false);  // finally fired
+    expect(isLocked(path.basename(vault))).toBe(false); // finally fired
     expect(events.at(-1)).toEqual({
-      type: 'error', message: 'narrator failed; please rephrase', recoverable: true,
+      type: 'error',
+      message: 'narrator failed; please rephrase',
+      recoverable: true,
     });
   });
 });
@@ -1108,14 +1146,22 @@ Add to `src/mastra/workflows/turn.ts`:
 const NARRATOR_FAILED: unique symbol = Symbol.for('wave5.narrator-failed');
 const TTS_FAILED: unique symbol = Symbol.for('wave5.tts-failed');
 
-function taggedError(kind: typeof NARRATOR_FAILED | typeof TTS_FAILED, message: string): Error & { kind: typeof kind } {
+function taggedError(
+  kind: typeof NARRATOR_FAILED | typeof TTS_FAILED,
+  message: string,
+): Error & { kind: typeof kind } {
   const e = new Error(message) as Error & { kind: typeof kind };
   e.kind = kind;
   return e;
 }
 
 function isTaggedError(err: unknown, kind: typeof NARRATOR_FAILED | typeof TTS_FAILED): boolean {
-  return typeof err === 'object' && err !== null && 'kind' in err && (err as { kind: unknown }).kind === kind;
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'kind' in err &&
+    (err as { kind: unknown }).kind === kind
+  );
 }
 
 async function streamNarratorWithRetry(
@@ -1164,7 +1210,11 @@ const narratorDossier = buildNarratorDossier({
   playerInput: input.playerInput,
   turnId,
 });
-const narratorOutput = await streamNarratorWithRetry(deps.narratorAgent, narratorDossier, deps.emit);
+const narratorOutput = await streamNarratorWithRetry(
+  deps.narratorAgent,
+  narratorDossier,
+  deps.emit,
+);
 deps.emit({ type: 'phase', name: 'media' });
 throw new Error('Step 4+ not yet implemented');
 ```
@@ -1223,8 +1273,13 @@ git commit -m "feat(wave-5): Step 3 — narrator streaming + retry + Scenario 3 
 ```ts
 describe('Step 4: illustrator || TTS', () => {
   let vault: string;
-  beforeEach(async () => { vault = await copyFixtureVault(FIXTURE); });
-  afterEach(async () => { releaseMutex(path.basename(vault)); await fs.rm(vault, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    vault = await copyFixtureVault(FIXTURE);
+  });
+  afterEach(async () => {
+    releaseMutex(path.basename(vault));
+    await fs.rm(vault, { recursive: true, force: true });
+  });
 
   it('runs illustrator and TTS in parallel and emits phase:persist', async () => {
     const { events, emit } = collectEvents();
@@ -1241,7 +1296,11 @@ describe('Step 4: illustrator || TTS', () => {
       return opts.output;
     });
     const illustratorAgent: AgentLike<IllustratorOutput> = {
-      generate: async () => { illusStarts.push(Date.now()); await new Promise((r) => setTimeout(r, 5)); return { object: illustratorOutput }; },
+      generate: async () => {
+        illusStarts.push(Date.now());
+        await new Promise((r) => setTimeout(r, 5));
+        return { object: illustratorOutput };
+      },
       stream: vi.fn(),
     };
     const narratorAgent: AgentLike<NarratorOutput> = {
@@ -1251,8 +1310,11 @@ describe('Step 4: illustrator || TTS', () => {
     const result = await runTurn(
       { vaultRoot: vault, playerInput: 'I do nothing.' },
       {
-        narratorAgent, factionAgent: makeMockAgent({ outputs: [] }),
-        illustratorAgent, ttsRender, emit,
+        narratorAgent,
+        factionAgent: makeMockAgent({ outputs: [] }),
+        illustratorAgent,
+        ttsRender,
+        emit,
       },
     );
     // Step 5 not wired yet → returns error. But Step 4 must have run.
@@ -1269,10 +1331,12 @@ describe('Step 4: illustrator || TTS', () => {
     const { events, emit } = collectEvents();
     const narratorOutput = { prose: 'A beat.' };
     const narratorAgent: AgentLike<NarratorOutput> = {
-      generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput),
+      generate: vi.fn(),
+      stream: async () => makeAgentStream([''], narratorOutput),
     };
     const illustratorAgent: AgentLike<IllustratorOutput> = {
-      generate: vi.fn()
+      generate: vi
+        .fn()
         .mockRejectedValueOnce(new Error('OpenAI 500'))
         .mockRejectedValueOnce(new Error('OpenAI 500')),
       stream: vi.fn(),
@@ -1280,7 +1344,13 @@ describe('Step 4: illustrator || TTS', () => {
     const ttsRender = vi.fn(async (_t, o) => o.output);
     const result = await runTurn(
       { vaultRoot: vault, playerInput: 'I do nothing.' },
-      { narratorAgent, factionAgent: makeMockAgent({ outputs: [] }), illustratorAgent, ttsRender, emit },
+      {
+        narratorAgent,
+        factionAgent: makeMockAgent({ outputs: [] }),
+        illustratorAgent,
+        ttsRender,
+        emit,
+      },
     );
     // Step 5 wired in Task 7; this test will pass once Task 7 lands. For now
     // we just verify illustrator's TWO calls happened and the workflow didn't
@@ -1294,18 +1364,27 @@ describe('Step 4: illustrator || TTS', () => {
     const { events, emit } = collectEvents();
     const narratorOutput = { prose: 'A beat.' };
     const narratorAgent: AgentLike<NarratorOutput> = {
-      generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput),
+      generate: vi.fn(),
+      stream: async () => makeAgentStream([''], narratorOutput),
     };
     const illustratorAgent: AgentLike<IllustratorOutput> = {
       generate: async () => ({
-        object: { prose_with_embeds: 'A beat.', images: [] }
+        object: { prose_with_embeds: 'A beat.', images: [] },
       }),
       stream: vi.fn(),
     };
-    const ttsRender = vi.fn(async () => { throw new Error('Inworld 500'); });
+    const ttsRender = vi.fn(async () => {
+      throw new Error('Inworld 500');
+    });
     const result = await runTurn(
       { vaultRoot: vault, playerInput: 'I do nothing.' },
-      { narratorAgent, factionAgent: makeMockAgent({ outputs: [] }), illustratorAgent, ttsRender, emit },
+      {
+        narratorAgent,
+        factionAgent: makeMockAgent({ outputs: [] }),
+        illustratorAgent,
+        ttsRender,
+        emit,
+      },
     );
     expect(result.status).toBe('error');
     if (result.status === 'error') {
@@ -1402,8 +1481,13 @@ git commit -m "feat(wave-5): Step 4 — illustrator || TTS + Scenario 6 (TTS fai
 ```ts
 describe('Step 5: persist (Scenario 1: happy path)', () => {
   let vault: string;
-  beforeEach(async () => { vault = await copyFixtureVault(FIXTURE); });
-  afterEach(async () => { releaseMutex(path.basename(vault)); await fs.rm(vault, { recursive: true, force: true }); });
+  beforeEach(async () => {
+    vault = await copyFixtureVault(FIXTURE);
+  });
+  afterEach(async () => {
+    releaseMutex(path.basename(vault));
+    await fs.rm(vault, { recursive: true, force: true });
+  });
 
   it('appends journal, ticks world, writes playtest, emits done', async () => {
     const { events, emit } = collectEvents();
@@ -1418,9 +1502,15 @@ describe('Step 5: persist (Scenario 1: happy path)', () => {
     const result = await runTurn(
       { vaultRoot: vault, playerInput: 'I find [[npcs/kessha|Kessha]].' },
       {
-        narratorAgent: { generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput) },
+        narratorAgent: {
+          generate: vi.fn(),
+          stream: async () => makeAgentStream([''], narratorOutput),
+        },
         factionAgent: makeMockAgent({ outputs: [{ decision: 'd', reasoning: 'r' }] }),
-        illustratorAgent: { generate: async () => ({ object: illustratorOutput }), stream: vi.fn() },
+        illustratorAgent: {
+          generate: async () => ({ object: illustratorOutput }),
+          stream: vi.fn(),
+        },
         ttsRender: async (_t, o) => o.output,
         emit,
       },
@@ -1443,8 +1533,10 @@ describe('Step 5: persist (Scenario 1: happy path)', () => {
     expect(threads).toContain('<progress>5/7</progress>');
     // done event last:
     expect(events.at(-1)).toMatchObject({
-      type: 'done', audioPath: expect.stringContaining(`narrator-${result.turnId}.ogg`),
-      finalProse: illustratorOutput.prose_with_embeds, images: illustratorOutput.images,
+      type: 'done',
+      audioPath: expect.stringContaining(`narrator-${result.turnId}.ogg`),
+      finalProse: illustratorOutput.prose_with_embeds,
+      images: illustratorOutput.images,
     });
     // Mutex released:
     expect(isLocked(path.basename(vault))).toBe(false);
@@ -1472,7 +1564,7 @@ import type { AliasRegistry } from '@/lib/vault/wikilinks';
 
 interface StubReport {
   stubsCreated: { kind: string; slug: string; path: string }[];
-  overflow: string[];  // wikilink targets appended to 0-Map.md
+  overflow: string[]; // wikilink targets appended to 0-Map.md
 }
 
 async function stubOnMention(
@@ -1571,15 +1663,32 @@ const registry: AliasRegistry = {
 };
 const stubReport = await stubOnMention(input.vaultRoot, registry, finalProse, turnId);
 await appendPlaytest(
-  input.vaultRoot, turnId,
-  renderPlaytest({ turnId, decisions, narratorOutput, illustratorOutput,
-    audioPath: audioPathResolved, matured, stubReport }),
+  input.vaultRoot,
+  turnId,
+  renderPlaytest({
+    turnId,
+    decisions,
+    narratorOutput,
+    illustratorOutput,
+    audioPath: audioPathResolved,
+    matured,
+    stubReport,
+  }),
 );
 deps.emit({
-  type: 'done', audioPath: audioPathResolved, finalProse, images: illustratorOutput.images,
+  type: 'done',
+  audioPath: audioPathResolved,
+  finalProse,
+  images: illustratorOutput.images,
 });
-return { status: 'success', turnId, finalProse,
-  audioPath: audioPathResolved, images: illustratorOutput.images, matured };
+return {
+  status: 'success',
+  turnId,
+  finalProse,
+  audioPath: audioPathResolved,
+  images: illustratorOutput.images,
+  matured,
+};
 ```
 
 - [ ] **Step 4: Verify Scenario 1 passes.**
@@ -1623,7 +1732,9 @@ it('Scenario 7: filesystem write fails → mutex released, no partial journal', 
       narratorAgent: makeMockAgent({ outputs: [] }),
       factionAgent: makeMockAgent({ outputs: [] }),
       illustratorAgent: makeMockAgent({ outputs: [] }),
-      ttsRender: async () => { throw new Error('should not call'); },
+      ttsRender: async () => {
+        throw new Error('should not call');
+      },
       emit,
     },
   );
@@ -1645,9 +1756,15 @@ it('Scenario 7b: throw injected at Step 5 (after lock acquired) releases mutex',
     const result = await runTurn(
       { vaultRoot: vault, playerInput: 'I do nothing.' },
       {
-        narratorAgent: { generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput) },
+        narratorAgent: {
+          generate: vi.fn(),
+          stream: async () => makeAgentStream([''], narratorOutput),
+        },
         factionAgent: makeMockAgent({ outputs: [] }),
-        illustratorAgent: { generate: async () => ({ object: illustratorOutput }), stream: vi.fn() },
+        illustratorAgent: {
+          generate: async () => ({ object: illustratorOutput }),
+          stream: vi.fn(),
+        },
         ttsRender: async (_t, o) => o.output,
         emit: () => {},
       },
@@ -1673,11 +1790,16 @@ If 7a fails because `loadAlwaysLoaded` throws BEFORE `acquireMutex` is called (i
 export async function runTurn(input, deps) {
   const slug = path.basename(input.vaultRoot);
   const held = acquireMutex(slug);
-  if (!held) { /* emit + return error */ }
+  if (!held) {
+    /* emit + return error */
+  }
   try {
     // step 1 starts here; loadAlwaysLoaded throw lands in the catch below
-  } catch (err) { /* emit + return error */ }
-  finally { if (held) releaseMutex(slug); }
+  } catch (err) {
+    /* emit + return error */
+  } finally {
+    if (held) releaseMutex(slug);
+  }
 }
 ```
 
@@ -1715,7 +1837,10 @@ it('Scenario 8: 5 unresolved wikilinks → 2 stubs + 3 0-Map TODOs', async () =>
   const result = await runTurn(
     { vaultRoot: vault, playerInput: 'I explore.' },
     {
-      narratorAgent: { generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput) },
+      narratorAgent: {
+        generate: vi.fn(),
+        stream: async () => makeAgentStream([''], narratorOutput),
+      },
       factionAgent: makeMockAgent({ outputs: [] }),
       illustratorAgent: { generate: async () => ({ object: illustratorOutput }), stream: vi.fn() },
       ttsRender: async (_t, o) => o.output,
@@ -1774,9 +1899,13 @@ const turnStep = createStep({
     if (!mastra) throw new Error('turnStep: mastra runtime not available');
     const narratorAgent = mastra.getAgent('narratorAgent') as unknown as AgentLike<NarratorOutput>;
     const factionAgent = mastra.getAgent('factionAgent') as unknown as AgentLike<FactionOutput>;
-    const illustratorAgent = mastra.getAgent('illustratorAgent') as unknown as AgentLike<IllustratorOutput>;
+    const illustratorAgent = mastra.getAgent(
+      'illustratorAgent',
+    ) as unknown as AgentLike<IllustratorOutput>;
     const result = await runTurn(inputData, {
-      narratorAgent, factionAgent, illustratorAgent,
+      narratorAgent,
+      factionAgent,
+      illustratorAgent,
       ttsRender: (text, opts) => ttsRender(text, { output: opts.output, voice: opts.voice }),
       emit: (e) => {
         // Mastra's writer is optional; tests in this file ignore it. Spec
@@ -1788,8 +1917,12 @@ const turnStep = createStep({
     if (result.status === 'error') {
       throw new Error(`turn failed: ${result.message}`);
     }
-    return { turnId: result.turnId, finalProse: result.finalProse,
-      audioPath: result.audioPath, imageCount: result.images.length };
+    return {
+      turnId: result.turnId,
+      finalProse: result.finalProse,
+      audioPath: result.audioPath,
+      imageCount: result.images.length,
+    };
   },
 });
 ```
@@ -1895,13 +2028,18 @@ async function main() {
   const result = await runTurn(
     { vaultRoot: args.vault, playerInput: args.input },
     {
-      narratorAgent: narrator, factionAgent: faction, illustratorAgent: illustrator,
+      narratorAgent: narrator,
+      factionAgent: faction,
+      illustratorAgent: illustrator,
       ttsRender: (text, opts) => ttsRender(text, { output: opts.output, voice: opts.voice }),
       emit: (e) => {
         if (e.type === 'prose_delta') process.stdout.write(e.text);
-        else if (e.type === 'phase') console.log(`\n[phase] ${e.name}${'count' in e ? ` (count=${e.count})` : ''}`);
-        else if (e.type === 'error') console.error(`\n[error] ${e.message} (recoverable=${e.recoverable})`);
-        else if (e.type === 'done') console.log(`\n[done] audio=${e.audioPath}, images=${e.images.length}`);
+        else if (e.type === 'phase')
+          console.log(`\n[phase] ${e.name}${'count' in e ? ` (count=${e.count})` : ''}`);
+        else if (e.type === 'error')
+          console.error(`\n[error] ${e.message} (recoverable=${e.recoverable})`);
+        else if (e.type === 'done')
+          console.log(`\n[done] audio=${e.audioPath}, images=${e.images.length}`);
       },
     },
   );
@@ -1911,7 +2049,9 @@ async function main() {
     console.error(`[smoke] FAILED: ${result.message}`);
     process.exit(1);
   }
-  console.log(`[smoke] OK: turn=${result.turnId}, audio=${result.audioPath}, images=${result.images.length}, matured=${result.matured.length}`);
+  console.log(
+    `[smoke] OK: turn=${result.turnId}, audio=${result.audioPath}, images=${result.images.length}, matured=${result.matured.length}`,
+  );
 }
 
 main().catch((err) => {
@@ -2064,16 +2204,22 @@ it('Scenario "player is alone": no on-stage NPCs → factions count 0 → narrat
   const result = await runTurn(
     { vaultRoot: vault, playerInput: 'I sit and think.' },
     {
-      narratorAgent: { generate: vi.fn(), stream: async () => makeAgentStream([''], narratorOutput) },
-      factionAgent: { generate: vi.fn(), stream: vi.fn() },  // never called
+      narratorAgent: {
+        generate: vi.fn(),
+        stream: async () => makeAgentStream([''], narratorOutput),
+      },
+      factionAgent: { generate: vi.fn(), stream: vi.fn() }, // never called
       illustratorAgent: { generate: async () => ({ object: illustratorOutput }), stream: vi.fn() },
       ttsRender: async (_t, o) => o.output,
       emit,
     },
   );
   expect(result.status).toBe('success');
-  expect(events.find((e) => e.type === 'phase' && (e as any).name === 'factions'))
-    .toEqual({ type: 'phase', name: 'factions', count: 0 });
+  expect(events.find((e) => e.type === 'phase' && (e as any).name === 'factions')).toEqual({
+    type: 'phase',
+    name: 'factions',
+    count: 0,
+  });
 });
 ```
 
@@ -2091,19 +2237,19 @@ git commit -m "test(wave-5): cover empty-faction-list non-failure path"
 ## Wave-5 exit criteria (verbatim from spec lines 577-582 + checklist)
 
 - [x] **Layer 2 integration tests (8 scenarios) all green with mocked agents and media.**
-   Covered by Scenarios 1-8 in `src/mastra/workflows/turn.test.ts`.
+      Covered by Scenarios 1-8 in `src/mastra/workflows/turn.test.ts`.
 - [x] **`pnpm tsx scripts/smoke-turn.ts --vault tests/fixtures/test-vault-copy --input "..."` produces: journal entry appended, audio file exists, 0+ images exist, playtest entry exists.**
-   Manual step in Task 12 Step 6.
+      Manual step in Task 12 Step 6.
 - [x] **Mutex always released even if any step throws (verified by injecting failures at every step).**
-   Covered by Scenario 7a (Step 1 throw) and 7b (Step 5 throw); Scenarios 3 and 6 implicitly verify mutex release on Step 3 and Step 4 failures respectively (each asserts `isLocked(slug) === false` post-run).
+      Covered by Scenario 7a (Step 1 throw) and 7b (Step 5 throw); Scenarios 3 and 6 implicitly verify mutex release on Step 3 and Step 4 failures respectively (each asserts `isLocked(slug) === false` post-run).
 - [ ] **All prior wave tests still pass.**
-   Verified by `pnpm test --run` in Task 12 Step 1.
+      Verified by `pnpm test --run` in Task 12 Step 1.
 - [ ] **Coverage ≥ 80%.**
-   Verified by `pnpm test:coverage` in Task 12 Step 3.
+      Verified by `pnpm test:coverage` in Task 12 Step 3.
 - [ ] **Lint + format clean.**
-   Verified in Task 12 Step 2.
+      Verified in Task 12 Step 2.
 - [ ] **TypeScript compiles.**
-   Verified in Task 12 Step 4.
+      Verified in Task 12 Step 4.
 
 ---
 

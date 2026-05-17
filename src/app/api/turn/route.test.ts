@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { handleTurnPost as POST } from './route';
 import type { PhaseEvent } from '@/lib/sse/events';
 import { parseSseChunks } from '@/lib/sse/parse';
-import { mockRunTurn } from '@/lib/sse/runner';
+import { mockRunTurn, mockRunAsk } from '@/lib/sse/runner';
 
 async function drain(res: Response): Promise<PhaseEvent[]> {
   const reader = res.body!.getReader();
@@ -33,8 +33,12 @@ describe('POST /api/turn', () => {
   it('returns 200 + SSE stream of mock events on a valid body', async () => {
     const res = await POST(
       postBody({ slug: 'commodore-vex', input: 'I confront the harbormaster.' }),
-      // Inject the mock runner with delayMs=0 for fast tests.
-      { runner: (input, emit) => mockRunTurn(input, emit, { delayMs: 0 }) },
+      // Inject the mock runner with delayMs=0 for fast tests. The classify
+      // override avoids hitting a real LLM in unit tests.
+      {
+        classify: async () => ({ isOoc: false, reasoning: 'test' }),
+        runner: (input, emit) => mockRunTurn(input, emit, { delayMs: 0 }),
+      },
     );
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('text/event-stream');
@@ -65,6 +69,75 @@ describe('POST /api/turn', () => {
     expect(res.status).toBe(400);
   });
 
+  it('forks to OOC runner when the classifier returns isOoc=true', async () => {
+    const res = await POST(postBody({ slug: 'commodore-vex', input: 'where are we?' }), {
+      classify: async () => ({ isOoc: true, reasoning: 'meta question' }),
+      askRunner: (input, emit) => mockRunAsk(input, emit, { delayMs: 0 }),
+    });
+    expect(res.status).toBe(200);
+    const events = await drain(res);
+    // First non-heartbeat event is the OOC ask phase, not a factions phase.
+    const first = events[0] as Extract<PhaseEvent, { type: 'phase' }>;
+    expect(first.type).toBe('phase');
+    expect(first.name).toBe('ask');
+    const done = events[events.length - 1] as Extract<PhaseEvent, { type: 'done' }>;
+    expect(done.type).toBe('done');
+    expect(done.audioPath).toBeNull();
+    expect(done.mode).toBe('ooc');
+    expect(done.images).toEqual([]);
+  });
+
+  it('runs canonical pipeline when classifier returns isOoc=false', async () => {
+    const seenRunner = vi.fn(
+      async (
+        input: { slug: string; input: string },
+        emit: (ev: PhaseEvent) => void,
+      ): Promise<void> => {
+        await mockRunTurn(input, emit, { delayMs: 0 });
+      },
+    );
+    const askSpy = vi.fn(async () => {});
+
+    const res = await POST(postBody({ slug: 'commodore-vex', input: 'I draw my blaster.' }), {
+      classify: async () => ({ isOoc: false, reasoning: 'in-fiction action' }),
+      runner: seenRunner,
+      askRunner: askSpy,
+    });
+    expect(res.status).toBe(200);
+    const events = await drain(res);
+    expect(seenRunner).toHaveBeenCalledOnce();
+    expect(askSpy).not.toHaveBeenCalled();
+    // The first event from the canonical mock is `phase: factions`, not ask.
+    const first = events[0] as Extract<PhaseEvent, { type: 'phase' }>;
+    expect(first.name).toBe('factions');
+  });
+
+  it('falls back to canonical when the classifier throws', async () => {
+    const seenRunner = vi.fn(
+      async (
+        input: { slug: string; input: string },
+        emit: (ev: PhaseEvent) => void,
+      ): Promise<void> => {
+        await mockRunTurn(input, emit, { delayMs: 0 });
+      },
+    );
+    const askSpy = vi.fn(async () => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await POST(postBody({ slug: 'commodore-vex', input: 'hmm' }), {
+      classify: async () => {
+        throw new Error('classifier offline');
+      },
+      runner: seenRunner,
+      askRunner: askSpy,
+    });
+    expect(res.status).toBe(200);
+    await drain(res);
+    expect(seenRunner).toHaveBeenCalledOnce();
+    expect(askSpy).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('concurrency invariant #3: client abort does NOT cancel the runner', async () => {
     const seen: PhaseEvent[] = [];
     let resolveRunner!: () => void;
@@ -86,7 +159,10 @@ describe('POST /api/turn', () => {
     };
 
     const ac = new AbortController();
-    const res = await POST(postBody({ slug: 's', input: 'i' }, ac.signal), { runner });
+    const res = await POST(postBody({ slug: 's', input: 'i' }, ac.signal), {
+      classify: async () => ({ isOoc: false, reasoning: 'test' }),
+      runner,
+    });
 
     // Read the first event so we know the runner has started.
     const reader = res.body!.getReader();

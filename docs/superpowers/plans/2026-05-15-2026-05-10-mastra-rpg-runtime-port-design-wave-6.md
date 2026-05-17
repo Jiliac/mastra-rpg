@@ -22,7 +22,7 @@
 
 - `src/mastra/index.ts` registers `{ narratorAgent, factionAgent, illustratorAgent }` (Wave 4). `workflows` is intentionally unconfigured — Wave 5 adds it back.
 - `src/app/page.tsx` is the create-next-app default landing page. The spec's out-of-band cleanup section calls it out as "delete or repurpose"; Wave 6 deletes it (Task 9) and adds a tiny placeholder redirect to `/play/<VAULT_SLUG>` so `localhost:3000` still does something useful.
-- `src/app/chat/page.tsx` + `src/app/api/chat/route.ts` are the leftover weather chat scaffold. They reference `mastra.getAgentById('weather-agent')`, which no longer exists post-Wave-4. They throw at request time but compile clean (it's a runtime `getAgentById` lookup). **Out of scope for this plan** — they're dead code, but the Wave-4 cleanup spec ticket explicitly bounded itself to weather *agents/tools/workflows*; the leftover `/chat` route + `/api/chat` belong to a future janitorial pass. Wave 6 leaves them alone to avoid scope creep.
+- `src/app/chat/page.tsx` + `src/app/api/chat/route.ts` are the leftover weather chat scaffold. They reference `mastra.getAgentById('weather-agent')`, which no longer exists post-Wave-4. They throw at request time but compile clean (it's a runtime `getAgentById` lookup). **Out of scope for this plan** — they're dead code, but the Wave-4 cleanup spec ticket explicitly bounded itself to weather _agents/tools/workflows_; the leftover `/chat` route + `/api/chat` belong to a future janitorial pass. Wave 6 leaves them alone to avoid scope creep.
 - `tests/fixtures/test-vault/` exists with the minimal vault from Wave 1; Wave 6 needs no new fixtures.
 - `vitest.config.ts` has `environment: 'node'` (no jsdom/happy-dom installed). Wave 6 unit tests must be node-only: SSE serializer/parser, runner-mock, the image route's traversal guard. Component render tests would require a new dev dep (`jsdom`) plus a Vitest project split (because the workflow + Mastra import path is hostile to a browser env); to honor "no new deps" the UI is verified by the spec-mandated manual browser smoke test (lines 410–418 + Wave-6 exit criteria), and the testable component logic is extracted into a pure reducer (`reducePhaseEvent`) which IS node-testable.
 
@@ -88,33 +88,33 @@ Either output is valid for Wave 6. If `W5_PRESENT`, Task 4 wires the runner agai
 
 Production files (all new):
 
-| File                                | Responsibility                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `src/lib/sse/events.ts`             | Re-exports `PhaseEvent` from `@/mastra/workflows/turn` (Wave 5's source of truth) and provides a local `isPhaseEvent(x: unknown)` runtime guard. No I/O. Single re-export line plus the guard implementation.                                                                                                                                                              |
-| `src/lib/sse/serialize.ts`          | `serializeEvent(ev: PhaseEvent): string` returns one SSE record (`event: <type>\ndata: <json>\n\n`). `serializeHeartbeat(): string` returns `: heartbeat\n\n` (comment line — keeps proxies happy across long narrator pauses).                                                                                                                                          |
-| `src/lib/sse/parse.ts`              | Pure parser: `parseSseChunks(buffer: string): { events: PhaseEvent[]; rest: string }`. Splits on `\n\n`, decodes each record's `event:` + `data:` lines, JSON-parses the payload, runs `isPhaseEvent` guard, drops malformed records. Used by the client reader.                                                                                                          |
-| `src/lib/sse/reducer.ts`            | Pure UI state reducer: `initialState()` + `reducePhaseEvent(state, ev): UiState`. Owns phase-tape state, accumulated prose, accumulated images, error state, done state. Node-testable — no React, no DOM.                                                                                                                                                              |
-| `src/lib/sse/runner.ts`             | The Wave-5/Wave-6 seam. Exports `runTurn(opts, emit): Promise<void>`. In `mock` mode (env flag or DI), emits a canonical event sequence with timed `prose_delta`s. In `live` mode, calls `runTurn` imported directly from `@/mastra/workflows/turn`, constructing the workflow's `RunTurnDeps` from the three agent module imports plus `ttsRender` and the `emit` callback. Crucially: **never accepts an `AbortSignal`** — concurrency invariant #3 is structural. |
-| `src/app/api/turn/route.ts`         | `POST` handler. Reads `{ slug, input }` JSON body, creates a `ReadableStream`, kicks off `runTurn` (fire-and-forget; does NOT await), pipes its emissions through `serializeEvent` into the stream. Returns `new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'connection': 'keep-alive', 'x-accel-buffering': 'no' } })`. On `request.signal.abort` (client disconnect), closes the stream's writer but lets `runTurn` continue. |
-| `src/app/api/turn/image/route.ts`   | `GET` handler. Reads `?slug=<slug>&filename=<name>` query, resolves to `<vaultRoot(slug)>/images/<name>`, runs a strict prefix-equality check on the resolved absolute path, streams the file with `content-type: image/png`. 404s on traversal attempt or missing file. (Why a route: vault images live outside `public/`; we don't want Next to copy them, and the path is a runtime input.) |
-| `src/app/api/turn/audio/route.ts`   | `GET` handler. Same shape as the image route but serves `<vaultRoot(slug)>/audio/<name>` with `content-type: audio/ogg`. Used by `<AudioPlayerElement src=...>` on `done`.                                                                                                                                                                                              |
-| `src/app/play/[slug]/page.tsx`      | Server component shell that reads `params.slug` and renders `<PlayClient slug={slug} />`. Five lines.                                                                                                                                                                                                                                                                  |
-| `src/app/play/[slug]/play-client.tsx` | The client component. Owns: an input form (uses `PromptInput`), the SSE fetch + `parseSseChunks` reader loop, a `useReducer` over `reducePhaseEvent`, render of `Conversation` + `Message` + `MessageResponse` (streaming prose), a `<PhaseTape>` column, a `<MutexBanner>`, a `<TurnImages>` strip, and `<AudioPlayer>` for the rendered narrator audio. |
-| `src/app/play/[slug]/phase-tape.tsx` | Small dumb component. Takes `phases: PhaseRecord[]` from reducer state and renders the spec's "phase tape on the right column" using the existing `Task` / `TaskTrigger` / `TaskItem` primitives from `src/components/ai-elements/task.tsx`.                                                                                                                            |
-| `src/app/play/[slug]/turn-images.tsx` | Small dumb component. Takes `images: ImageMeta[]` (subset of the `done` event payload) and a slug, renders an inline grid using `<img src={`/api/turn/image?slug=${slug}&filename=${img.filename}`}>` (we don't reach for the `<Image>` ai-element here because it expects base64 data URIs, not URLs).                                                                  |
-| `src/app/play/[slug]/mutex-banner.tsx` | Small dumb component. Takes `{ visible, message }` and renders a `<Alert>` from `src/components/ui/alert.tsx`. Hidden when `!visible`.                                                                                                                                                                                                                                  |
-| `src/app/page.tsx` (rewrite)        | Out-of-band cleanup. Replace the create-next-app default content with a server component that reads `process.env.VAULT_SLUG` and `redirect()`s to `/play/<slug>` (or renders a small fallback if the env is unset).                                                                                                                                                     |
+| File                                   | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/sse/events.ts`                | Re-exports `PhaseEvent` from `@/mastra/workflows/turn` (Wave 5's source of truth) and provides a local `isPhaseEvent(x: unknown)` runtime guard. No I/O. Single re-export line plus the guard implementation.                                                                                                                                                                                                                                                                                      |
+| `src/lib/sse/serialize.ts`             | `serializeEvent(ev: PhaseEvent): string` returns one SSE record (`event: <type>\ndata: <json>\n\n`). `serializeHeartbeat(): string` returns `: heartbeat\n\n` (comment line — keeps proxies happy across long narrator pauses).                                                                                                                                                                                                                                                                    |
+| `src/lib/sse/parse.ts`                 | Pure parser: `parseSseChunks(buffer: string): { events: PhaseEvent[]; rest: string }`. Splits on `\n\n`, decodes each record's `event:` + `data:` lines, JSON-parses the payload, runs `isPhaseEvent` guard, drops malformed records. Used by the client reader.                                                                                                                                                                                                                                   |
+| `src/lib/sse/reducer.ts`               | Pure UI state reducer: `initialState()` + `reducePhaseEvent(state, ev): UiState`. Owns phase-tape state, accumulated prose, accumulated images, error state, done state. Node-testable — no React, no DOM.                                                                                                                                                                                                                                                                                         |
+| `src/lib/sse/runner.ts`                | The Wave-5/Wave-6 seam. Exports `runTurn(opts, emit): Promise<void>`. In `mock` mode (env flag or DI), emits a canonical event sequence with timed `prose_delta`s. In `live` mode, calls `runTurn` imported directly from `@/mastra/workflows/turn`, constructing the workflow's `RunTurnDeps` from the three agent module imports plus `ttsRender` and the `emit` callback. Crucially: **never accepts an `AbortSignal`** — concurrency invariant #3 is structural.                               |
+| `src/app/api/turn/route.ts`            | `POST` handler. Reads `{ slug, input }` JSON body, creates a `ReadableStream`, kicks off `runTurn` (fire-and-forget; does NOT await), pipes its emissions through `serializeEvent` into the stream. Returns `new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'connection': 'keep-alive', 'x-accel-buffering': 'no' } })`. On `request.signal.abort` (client disconnect), closes the stream's writer but lets `runTurn` continue. |
+| `src/app/api/turn/image/route.ts`      | `GET` handler. Reads `?slug=<slug>&filename=<name>` query, resolves to `<vaultRoot(slug)>/images/<name>`, runs a strict prefix-equality check on the resolved absolute path, streams the file with `content-type: image/png`. 404s on traversal attempt or missing file. (Why a route: vault images live outside `public/`; we don't want Next to copy them, and the path is a runtime input.)                                                                                                     |
+| `src/app/api/turn/audio/route.ts`      | `GET` handler. Same shape as the image route but serves `<vaultRoot(slug)>/audio/<name>` with `content-type: audio/ogg`. Used by `<AudioPlayerElement src=...>` on `done`.                                                                                                                                                                                                                                                                                                                         |
+| `src/app/play/[slug]/page.tsx`         | Server component shell that reads `params.slug` and renders `<PlayClient slug={slug} />`. Five lines.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `src/app/play/[slug]/play-client.tsx`  | The client component. Owns: an input form (uses `PromptInput`), the SSE fetch + `parseSseChunks` reader loop, a `useReducer` over `reducePhaseEvent`, render of `Conversation` + `Message` + `MessageResponse` (streaming prose), a `<PhaseTape>` column, a `<MutexBanner>`, a `<TurnImages>` strip, and `<AudioPlayer>` for the rendered narrator audio.                                                                                                                                          |
+| `src/app/play/[slug]/phase-tape.tsx`   | Small dumb component. Takes `phases: PhaseRecord[]` from reducer state and renders the spec's "phase tape on the right column" using the existing `Task` / `TaskTrigger` / `TaskItem` primitives from `src/components/ai-elements/task.tsx`.                                                                                                                                                                                                                                                       |
+| `src/app/play/[slug]/turn-images.tsx`  | Small dumb component. Takes `images: ImageMeta[]` (subset of the `done` event payload) and a slug, renders an inline grid using `<img src={`/api/turn/image?slug=${slug}&filename=${img.filename}`}>` (we don't reach for the `<Image>` ai-element here because it expects base64 data URIs, not URLs).                                                                                                                                                                                            |
+| `src/app/play/[slug]/mutex-banner.tsx` | Small dumb component. Takes `{ visible, message }` and renders a `<Alert>` from `src/components/ui/alert.tsx`. Hidden when `!visible`.                                                                                                                                                                                                                                                                                                                                                             |
+| `src/app/page.tsx` (rewrite)           | Out-of-band cleanup. Replace the create-next-app default content with a server component that reads `process.env.VAULT_SLUG` and `redirect()`s to `/play/<slug>` (or renders a small fallback if the env is unset).                                                                                                                                                                                                                                                                                |
 
 Test files (new, node-only):
 
-| File                                    | Coverage                                                                                                                                                                                  |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/sse/serialize.test.ts`         | Every variant of `PhaseEvent` round-trips through `serializeEvent` → `parseSseChunks` and matches the source object. `serializeHeartbeat` returns the literal `: heartbeat\n\n`.          |
-| `src/lib/sse/parse.test.ts`             | Multi-record chunk; partial trailing record returned as `rest`; malformed JSON dropped; unknown event type dropped; empty buffer returns `{ events: [], rest: '' }`.                      |
-| `src/lib/sse/reducer.test.ts`           | `phase` events append to tape and mark previous phase done; `prose_delta` events concatenate; `done` event captures `audioPath`/`images` + flips state to `done`; `error` event captures `recoverable`. |
-| `src/lib/sse/runner.test.ts`            | `mockRunTurn` emits the canonical sequence in order (`phase: factions` → `phase: narrator` → 3+ `prose_delta` → `phase: media` → `phase: persist` → `done`); never emits `error` in default mode; the `MOCK_FAIL=mutex` flag emits the spec's mutex-contention `error`. |
-| `src/app/api/turn/route.test.ts`        | The route returns `200` with the right `Content-Type` header on a valid POST; returns `400` on a missing body field; the response stream contains the mock runner's serialized events in order; when the client disconnects mid-stream, `runTurn`'s `emit` keeps being invoked (drained into `/dev/null`) — verifies concurrency invariant #3 from the route's side. |
-| `src/app/api/turn/image/route.test.ts`  | Resolves a valid `?slug&filename` to a 200 + bytes; rejects `../../etc/passwd` with 404; rejects an absolute filename with 404; rejects unknown slug with 404.                            |
+| File                                   | Coverage                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/sse/serialize.test.ts`        | Every variant of `PhaseEvent` round-trips through `serializeEvent` → `parseSseChunks` and matches the source object. `serializeHeartbeat` returns the literal `: heartbeat\n\n`.                                                                                                                                                                                     |
+| `src/lib/sse/parse.test.ts`            | Multi-record chunk; partial trailing record returned as `rest`; malformed JSON dropped; unknown event type dropped; empty buffer returns `{ events: [], rest: '' }`.                                                                                                                                                                                                 |
+| `src/lib/sse/reducer.test.ts`          | `phase` events append to tape and mark previous phase done; `prose_delta` events concatenate; `done` event captures `audioPath`/`images` + flips state to `done`; `error` event captures `recoverable`.                                                                                                                                                              |
+| `src/lib/sse/runner.test.ts`           | `mockRunTurn` emits the canonical sequence in order (`phase: factions` → `phase: narrator` → 3+ `prose_delta` → `phase: media` → `phase: persist` → `done`); never emits `error` in default mode; the `MOCK_FAIL=mutex` flag emits the spec's mutex-contention `error`.                                                                                              |
+| `src/app/api/turn/route.test.ts`       | The route returns `200` with the right `Content-Type` header on a valid POST; returns `400` on a missing body field; the response stream contains the mock runner's serialized events in order; when the client disconnects mid-stream, `runTurn`'s `emit` keeps being invoked (drained into `/dev/null`) — verifies concurrency invariant #3 from the route's side. |
+| `src/app/api/turn/image/route.test.ts` | Resolves a valid `?slug&filename` to a 200 + bytes; rejects `../../etc/passwd` with 404; rejects an absolute filename with 404; rejects unknown slug with 404.                                                                                                                                                                                                       |
 
 **Why no React/JSX tests:** vitest's `environment: 'node'` is what's configured, and adding `jsdom`/`@testing-library` would mean a new dev dep + a multi-project vitest config (because the route handlers + the Mastra import graph fall over in a browser env). The spec's exit criteria for Wave 6 are explicitly behavioral ("Browser at localhost:3000/play/commodore-vex plays a full turn end-to-end") and verified manually. All non-trivial UI logic is extracted into `reducer.ts` and tested in node.
 
@@ -156,9 +156,7 @@ describe('serializeEvent', () => {
   it('round-trips phase factions', () => {
     const ev: PhaseEvent = { type: 'phase', name: 'factions', count: 3 };
     const wire = serializeEvent(ev);
-    expect(wire).toBe(
-      `event: phase\ndata: {"type":"phase","name":"factions","count":3}\n\n`,
-    );
+    expect(wire).toBe(`event: phase\ndata: {"type":"phase","name":"factions","count":3}\n\n`);
     const { events } = parseSseChunks(wire);
     expect(events).toEqual([ev]);
   });
@@ -577,9 +575,7 @@ describe('reducePhaseEvent', () => {
         type: 'done',
         audioPath: '/abs/audio/narrator-turn-001.ogg',
         finalProse: 'Final.',
-        images: [
-          { filename: 'a.png', path: '/abs/images/a.png', prompt: 'p', slug: 's' },
-        ],
+        images: [{ filename: 'a.png', path: '/abs/images/a.png', prompt: 'p', slug: 's' }],
       },
     );
     expect(s.status).toBe('done');
@@ -792,9 +788,7 @@ describe('mockRunTurn', () => {
       (ev) => emitted.push(ev),
       { delayMs: 0, failure: 'mutex' },
     );
-    expect(emitted).toEqual([
-      { type: 'error', message: 'still working', recoverable: true },
-    ]);
+    expect(emitted).toEqual([{ type: 'error', message: 'still working', recoverable: true }]);
   });
 
   it('runner does not accept an AbortSignal (compile-time contract)', () => {
@@ -1331,10 +1325,7 @@ describe('POST /api/turn', () => {
     };
 
     const ac = new AbortController();
-    const res = await POST(
-      postBody({ slug: 's', input: 'i' }, ac.signal),
-      { runner },
-    );
+    const res = await POST(postBody({ slug: 's', input: 'i' }, ac.signal), { runner });
 
     // Read the first event so we know the runner has started.
     const reader = res.body!.getReader();
@@ -1638,13 +1629,7 @@ export function TurnImages({ slug, images }: { slug: string; images: ImageMeta[]
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangleIcon } from 'lucide-react';
 
-export function MutexBanner({
-  visible,
-  message,
-}: {
-  visible: boolean;
-  message: string;
-}) {
+export function MutexBanner({ visible, message }: { visible: boolean; message: string }) {
   if (!visible) return null;
   return (
     <Alert variant="default" className="mb-3">
@@ -1705,11 +1690,7 @@ import { PlayClient } from './play-client';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PlayPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default async function PlayPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   return <PlayClient slug={slug} />;
 }
@@ -2119,10 +2100,10 @@ Verify:
 
 ### Exit-criteria checklist (spec lines 593–598)
 
-- [ ] Browser at `localhost:3000/play/commodore-vex` plays a full turn end-to-end. *(Step 8 above in live mode; Step 3 in mock mode.)*
-- [ ] Phase tape updates on each `phase` event; prose streams via `prose_delta`; audio + images appear at `done`. *(Step 3.)*
-- [ ] SSE disconnect mid-stream does NOT abort the workflow; on page reload, the journal shows the completed turn. *(Step 4 in mock; Step 8 in live — inspect `journal.md` to confirm.)*
-- [ ] Mutex contention surfaces as `error: "still working"` and disables input until the in-flight turn completes. *(Step 5.)*
+- [ ] Browser at `localhost:3000/play/commodore-vex` plays a full turn end-to-end. _(Step 8 above in live mode; Step 3 in mock mode.)_
+- [ ] Phase tape updates on each `phase` event; prose streams via `prose_delta`; audio + images appear at `done`. _(Step 3.)_
+- [ ] SSE disconnect mid-stream does NOT abort the workflow; on page reload, the journal shows the completed turn. _(Step 4 in mock; Step 8 in live — inspect `journal.md` to confirm.)_
+- [ ] Mutex contention surfaces as `error: "still working"` and disables input until the in-flight turn completes. _(Step 5.)_
 
 ---
 

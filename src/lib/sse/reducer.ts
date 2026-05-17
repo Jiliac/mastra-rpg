@@ -9,7 +9,7 @@ import type { ImageMeta } from '@/lib/schemas';
 export type PhaseStatus = 'pending' | 'active' | 'done';
 
 export interface PhaseRecord {
-  name: 'factions' | 'narrator' | 'media' | 'persist';
+  name: 'factions' | 'narrator' | 'media' | 'persist' | 'ask';
   status: PhaseStatus;
   count?: number;
 }
@@ -22,6 +22,7 @@ export interface UiState {
   images: ImageMeta[];
   error: { message: string; recoverable: boolean } | null;
   status: 'idle' | 'streaming' | 'done' | 'error';
+  mode: 'canonical' | 'ooc';
 }
 
 export function initialState(): UiState {
@@ -33,6 +34,7 @@ export function initialState(): UiState {
     images: [],
     error: null,
     status: 'idle',
+    mode: 'canonical',
   };
 }
 
@@ -64,6 +66,7 @@ export function reducePhaseEvent(state: UiState, ev: PhaseEvent): UiState {
         finalProse: ev.finalProse,
         audioPath: ev.audioPath,
         images: ev.images,
+        mode: ev.mode ?? state.mode,
       };
     case 'error':
       return {
