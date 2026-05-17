@@ -11,15 +11,32 @@ async function tmpVault(): Promise<string> {
 const FIXED_NOW = () => new Date('2026-05-16T18:00:00Z');
 
 describe('appendOoc', () => {
-  it('creates ooc.md with a `# OOC` header and a stamped entry on first append', async () => {
+  it('creates ooc.md on first append with a stamped entry', async () => {
     const root = await tmpVault();
     try {
       await appendOoc(root, 'where are we?', 'You are in the harbor.', { now: FIXED_NOW });
       const raw = await fs.readFile(oocPath(root), 'utf8');
-      expect(raw.startsWith('# OOC\n')).toBe(true);
       expect(raw).toContain('## 2026-05-16T18:00:00.000Z');
       expect(raw).toContain('**Q:** where are we?');
       expect(raw).toContain('**A:** You are in the harbor.');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses atomic appendFile so concurrent calls in the same slug do not overwrite', async () => {
+    const root = await tmpVault();
+    try {
+      await Promise.all([
+        appendOoc(root, 'q1', 'a1', { now: () => new Date('2026-05-16T18:00:00Z') }),
+        appendOoc(root, 'q2', 'a2', { now: () => new Date('2026-05-16T18:00:01Z') }),
+        appendOoc(root, 'q3', 'a3', { now: () => new Date('2026-05-16T18:00:02Z') }),
+      ]);
+      const raw = await fs.readFile(oocPath(root), 'utf8');
+      // All three entries must survive (atomic O_APPEND, no read-then-write race).
+      expect(raw).toContain('**Q:** q1');
+      expect(raw).toContain('**Q:** q2');
+      expect(raw).toContain('**Q:** q3');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

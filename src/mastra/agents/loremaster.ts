@@ -20,6 +20,10 @@ export const loremasterAgent = new Agent({
     role: 'system',
     content: SYSTEM_PROMPT,
     providerOptions: {
+      // `medium` (not `high` like narrator/faction/illustrator, not `low` like
+      // classifier): the loremaster synthesizes campaign state into coherent
+      // prose, which benefits from some reasoning, but it never advances the
+      // world so the full reasoning budget of the canonical pipeline is wasted.
       openai: { reasoningEffort: 'medium' },
     },
   },

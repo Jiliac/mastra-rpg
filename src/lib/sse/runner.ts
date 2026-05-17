@@ -236,8 +236,12 @@ export async function runTurn(
 // ----- ask (OOC) live runner ----------------------------------------------
 
 export async function liveRunAsk(input: RunAskInput, emit: Emit): Promise<void> {
-  // Loremaster is stream-only (no structured output), so adapt with `unknown`
-  // for the object type — runAsk never reads `.object`, only `textStream`.
+  // Loremaster has no structured output schema, so its `.object` is unused —
+  // `runAsk` only iterates `textStream`. The cast is safe because the adapter
+  // narrows the Mastra `Agent` shape down to what `runAsk` actually reads;
+  // do not remove the inline alias thinking it's cargo-cult — it exists to
+  // tell TypeScript the resolved object type is `unknown`, not the agent's
+  // richer FullOutput<unknown> / MastraModelOutput<unknown> wire shape.
   type MastraStreamShape = {
     generate: (prompt: string) => Promise<{ object: unknown }>;
     stream: (prompt: string) => Promise<{

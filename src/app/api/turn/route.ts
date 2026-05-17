@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import type { PhaseEvent } from '@/lib/sse/events';
 import { serializeEvent, serializeHeartbeat } from '@/lib/sse/serialize';
-import { runTurn, runAsk, type RunTurnInput, type Emit } from '@/lib/sse/runner';
+import { runTurn, runAsk, type RunTurnInput, type RunAskInput, type Emit } from '@/lib/sse/runner';
 import { classifierAgent } from '@/mastra/agents/classifier';
 import type { ClassifierOutput } from '@/lib/schemas';
 
@@ -24,7 +24,7 @@ export interface PostOpts {
   /** Test DI: override the canonical runner. */
   runner?: (input: RunTurnInput, emit: Emit) => Promise<void>;
   /** Test DI: override the OOC runner. */
-  askRunner?: (input: RunTurnInput, emit: Emit) => Promise<void>;
+  askRunner?: (input: RunAskInput, emit: Emit) => Promise<void>;
   /**
    * Test DI: override the classifier. Return `{ isOoc: boolean }` or throw to
    * exercise the fail-safe fallback. Defaults to `classifierAgent.generate(...)`.

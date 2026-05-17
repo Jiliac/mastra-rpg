@@ -16,6 +16,12 @@ export interface AppendOocOptions {
  * One file per slug, append-only, never read by any agent. If `question` or
  * `answer` is empty after trimming, the call is a no-op so the file never
  * accumulates blank entries from edge cases.
+ *
+ * Concurrency: OOC turns run WITHOUT the vault mutex (canonical turns hold it
+ * for the duration of `runTurn`). Two concurrent OOC questions in the same
+ * slug could race on a read-then-write append, so this uses `fs.appendFile`
+ * which is atomic at the OS level (O_APPEND). Each entry starts with a
+ * leading newline so consecutive appends remain readable.
  */
 export async function appendOoc(
   root: string,
@@ -29,17 +35,7 @@ export async function appendOoc(
 
   const now = options.now ? options.now() : new Date();
   const stamp = now.toISOString();
-  const heading = `## ${stamp}`;
-  const block = `\n\n${heading}\n\n**Q:** ${q}\n\n**A:** ${a}\n`;
+  const block = `\n## ${stamp}\n\n**Q:** ${q}\n\n**A:** ${a}\n`;
 
-  const filePath = oocPath(root);
-  let existing: string | null = null;
-  try {
-    existing = await fs.readFile(filePath, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
-
-  const next = existing === null ? `# OOC${block}` : `${existing.replace(/\s+$/, '')}${block}`;
-  await fs.writeFile(filePath, next, 'utf8');
+  await fs.appendFile(oocPath(root), block, 'utf8');
 }

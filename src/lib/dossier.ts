@@ -167,7 +167,7 @@ export function buildFactionDossier(input: BuildFactionDossierInput): string {
     `<recent_journal>`,
     renderJournal(input.recent),
     `</recent_journal>`,
-    `<player_input>${input.playerInput.trim()}</player_input>`,
+    `<player_input>${esc(input.playerInput.trim())}</player_input>`,
   ].join('\n');
 }
 
@@ -195,7 +195,7 @@ export function buildNarratorDossier(input: BuildNarratorDossierInput): string {
     renderJournal(input.recent),
     `</recent_journal>`,
     `<faction_decisions>${renderDecisions(input.factionDecisions)}</faction_decisions>`,
-    `<player_input>${input.playerInput.trim()}</player_input>`,
+    `<player_input>${esc(input.playerInput.trim())}</player_input>`,
     `</turn>`,
   ].join('\n');
 }
@@ -223,7 +223,7 @@ export function buildLoremasterDossier(input: BuildLoremasterDossierInput): stri
     `<recent_journal>`,
     renderJournal(input.recent),
     `</recent_journal>`,
-    `<ooc_question>${input.playerInput.trim()}</ooc_question>`,
+    `<ooc_question>${esc(input.playerInput.trim())}</ooc_question>`,
   ].join('\n');
 }
 
