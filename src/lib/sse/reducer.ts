@@ -66,7 +66,11 @@ export function reducePhaseEvent(state: UiState, ev: PhaseEvent): UiState {
         finalProse: ev.finalProse,
         audioPath: ev.audioPath,
         images: ev.images,
-        mode: ev.mode ?? state.mode,
+        // Default to canonical when the producer omits `mode`. The previous
+        // `?? state.mode` fallback could in theory carry an 'ooc' mode across
+        // a done event that arrived without one — `?? 'canonical'` is what the
+        // wire contract actually says.
+        mode: ev.mode ?? 'canonical',
       };
     case 'error':
       return {

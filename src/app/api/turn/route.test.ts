@@ -112,6 +112,35 @@ describe('POST /api/turn', () => {
     expect(first.name).toBe('factions');
   });
 
+  it('falls back to canonical when the classifier hangs past the timeout', async () => {
+    const seenRunner = vi.fn(
+      async (
+        input: { slug: string; input: string },
+        emit: (ev: PhaseEvent) => void,
+      ): Promise<void> => {
+        await mockRunTurn(input, emit, { delayMs: 0 });
+      },
+    );
+    const askSpy = vi.fn(async () => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Classifier never resolves; the route must time it out and proceed.
+    const res = await POST(postBody({ slug: 'commodore-vex', input: 'meta?' }), {
+      classify: () => new Promise<never>(() => {}),
+      classifyTimeoutMs: 25,
+      runner: seenRunner,
+      askRunner: askSpy,
+    });
+    expect(res.status).toBe(200);
+    await drain(res);
+    expect(seenRunner).toHaveBeenCalledOnce();
+    expect(askSpy).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    const firstWarn = warn.mock.calls[0]?.join(' ') ?? '';
+    expect(firstWarn).toMatch(/classifier timed out/);
+    warn.mockRestore();
+  });
+
   it('falls back to canonical when the classifier throws', async () => {
     const seenRunner = vi.fn(
       async (

@@ -30,6 +30,30 @@ export interface PostOpts {
    * exercise the fail-safe fallback. Defaults to `classifierAgent.generate(...)`.
    */
   classify?: (input: string) => Promise<ClassifierOutput>;
+  /** Test DI: override the classifier timeout in ms. Defaults to 5000. */
+  classifyTimeoutMs?: number;
+}
+
+/** Default classifier timeout. gpt-5.4-mini with low reasoning should respond
+ *  in well under 2s; 5s gives slack without making clients wait on a stalled
+ *  provider before the SSE stream even opens. */
+const CLASSIFY_TIMEOUT_MS = 5_000;
+
+class ClassifierTimeoutError extends Error {
+  constructor(public timeoutMs: number) {
+    super(`classifier timed out after ${timeoutMs}ms`);
+    this.name = 'ClassifierTimeoutError';
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ClassifierTimeoutError(ms)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
 }
 
 // Project rule (.coderabbit.yaml lines 176-179): route handlers must validate
@@ -90,12 +114,16 @@ export async function handleTurnPost(req: Request, opts: PostOpts = {}): Promise
     return new Response(parsed.error, { status: 400 });
   }
 
-  // Fail-safe classifier: any throw or unexpected shape falls back to canonical.
-  // Better to over-run the full pipeline than miss a real turn.
+  // Fail-safe classifier: any throw, malformed shape, or timeout falls back to
+  // canonical. Better to over-run the full pipeline than miss a real turn.
+  // A bounded timeout matters because we are blocking SSE stream creation on
+  // this call — without it, a stalled provider hangs the client with no
+  // heartbeats until its socket times out.
   const classify = opts.classify ?? defaultClassify;
+  const timeoutMs = opts.classifyTimeoutMs ?? CLASSIFY_TIMEOUT_MS;
   let isOoc = false;
   try {
-    const verdict = await classify(parsed.input);
+    const verdict = await withTimeout(classify(parsed.input), timeoutMs);
     isOoc = verdict.isOoc === true;
   } catch (err) {
     console.warn(
